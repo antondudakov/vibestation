@@ -15,17 +15,29 @@ cargo build --release
 ./target/release/vibestation --version
 ```
 
-`dist/vibestation-x86_64-linux` is a checked-in build for trying it on a remote
-box without a toolchain there. It is statically linked against musl, so it runs
-on any x86_64 Linux regardless of glibc version. Rebuild it with:
+`dist/` holds checked-in builds, so the tool can be tried on a machine with no
+Rust toolchain. `vibestation-macos` is a universal binary for Intel and Apple
+Silicon; `vibestation-x86_64-linux` is statically linked against musl and runs
+on any x86_64 Linux whatever its glibc.
+
+On a Mac, install or update with [`scripts/install-macos.sh`](scripts/install-macos.sh),
+run from a clone. It pulls, installs into `~/.local/bin` and ad-hoc signs the
+binary — the macOS build is cross-compiled on Linux, so it arrives unsigned and
+Apple Silicon will not run it otherwise.
+
+Rebuild both:
 
 ```sh
 cargo build --release --target x86_64-unknown-linux-musl
 cp target/x86_64-unknown-linux-musl/release/vibestation dist/vibestation-x86_64-linux
+
+# needs zig and cargo-zigbuild; macOS has no linker on Linux without them
+cargo zigbuild --release --target universal2-apple-darwin
+cp target/universal2-apple-darwin/release/vibestation dist/vibestation-macos
 ```
 
-It is a convenience for the pre-release tickets; ticket 12 replaces it with
-GitHub Releases.
+This is a convenience for the pre-release tickets; ticket 12 replaces it with
+GitHub Releases and a Homebrew tap.
 
 ## Development
 
