@@ -23,18 +23,25 @@ tests. Library bindings add build complexity and a second source of truth.
 
 ## 3. No network on the hot path
 
-Opening the picker never touches the network. Neither does creating a session or
-a branch. Vibestation branches from local refs; keeping them current is the
-user's job.
+Opening the picker never touches the network, and neither does attaching to a
+session or creating one. The single exception is an explicit, confirmable
+`git fetch` immediately before creating a branch — the one moment where being
+current is the entire point. It is opt-in, it never sits on the path to an
+existing session, and a failed fetch degrades to the local ref with a warning
+rather than blocking the work.
 
 **Why:** a session switcher that stalls on a flaky VPN is worse than no session
-switcher.
+switcher. Branching off a stale default branch is a different and worse problem,
+so that one path pays for the network call — visibly, and never fatally.
 
 ## 4. Never mutate a dirty working tree
 
-Git state changes are opt-in, confirmed, and refuse to run against uncommitted
-changes. When a mutation is refused, the tool still does the non-destructive part
-of the job and says what it skipped.
+Git state changes are opt-in and confirmed. Any operation that would alter an
+existing checkout refuses to run against uncommitted changes; when refused, the
+tool still does the non-destructive part of the job and says what it skipped.
+
+Creating a worktree alters no existing checkout and is therefore always safe.
+That is precisely why it is the preferred way to start new work.
 
 **Why:** losing work to a tool that was trying to be helpful is unforgivable, and
 this tool runs at the moment you are most distracted.
