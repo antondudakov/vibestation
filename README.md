@@ -15,6 +15,18 @@ cargo build --release
 ./target/release/vibestation --version
 ```
 
+`dist/vibestation-x86_64-linux` is a checked-in build for trying it on a remote
+box without a toolchain there. It is statically linked against musl, so it runs
+on any x86_64 Linux regardless of glibc version. Rebuild it with:
+
+```sh
+cargo build --release --target x86_64-unknown-linux-musl
+cp target/x86_64-unknown-linux-musl/release/vibestation dist/vibestation-x86_64-linux
+```
+
+It is a convenience for the pre-release tickets; ticket 12 replaces it with
+GitHub Releases.
+
 ## Development
 
 ```sh
