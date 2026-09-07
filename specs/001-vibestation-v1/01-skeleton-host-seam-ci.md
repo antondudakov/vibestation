@@ -13,12 +13,12 @@ testing convention for the project, so it is worth getting right here.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `cargo build` produces a binary; `--version` reports the crate version
-- [ ] `--help` exists and lists the flags that exist so far
-- [ ] The `Host` trait covers process execution (argv, optional working directory, returning exit status, stdout and stderr), file read that reports absence rather than erroring, file write, existence test, bounded-depth directory traversal that does not follow symlinks, prompt (select from list, free-text with editable default, yes/no with default), and current time
-- [ ] There is exactly one real implementation and one fake; the fake records the ordered command log and every file write
-- [ ] A test drives the fake end to end and asserts on the recorded command log
-- [ ] CI runs `cargo fmt --check`, `cargo clippy` and `cargo test` on every PR
-- [ ] Licence and README stub are present
+- [x] `cargo build` produces a binary; `--version` reports the crate version
+- [x] `--help` exists and lists the flags that exist so far
+- [x] The `Host` trait covers process execution (argv, optional working directory, returning exit status, stdout and stderr), file read that reports absence rather than erroring, file write, existence test, bounded-depth directory traversal that does not follow symlinks, prompt (select from list, free-text with editable default, yes/no with default), and current time
+- [x] There is exactly one real implementation and one fake; the fake records the ordered command log and every file write
+- [x] A test drives the fake end to end and asserts on the recorded command log
+- [x] CI runs `cargo fmt --check`, `cargo clippy` and `cargo test` on every PR
+- [x] Licence and README stub are present

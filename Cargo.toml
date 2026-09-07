@@ -1,0 +1,13 @@
+[package]
+name = "vibestation"
+version = "0.1.0"
+edition = "2021"
+description = "One picker for your tmux sessions and git projects"
+license = "MIT"
+repository = "https://github.com/bwdude/vibestation"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+inquire = "0.7"
+walkdir = "2"
