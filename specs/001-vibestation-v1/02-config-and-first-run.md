@@ -9,13 +9,13 @@ file rather than a parse trace.
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] First run asks one question only: the projects directory
-- [ ] A TOML config is written at a predictable path under the user's home, with explanatory comments on every field
-- [ ] Fields present: projects dirs (a list, even though first run fills one entry), extra projects, username, optional default-branch override, scan depth (default 10), fetch-before-branch (default true)
-- [ ] Username is defaulted from `git config user.name`, slugified
-- [ ] Home directory comes from the `HOME` environment variable, not a crate
-- [ ] A hand-written config with fields omitted loads, with defaults filling the gaps
-- [ ] A malformed config produces a clear error naming the file
-- [ ] A written config round-trips through load
+- [x] First run asks one question only: the projects directory
+- [x] A TOML config is written at a predictable path under the user's home, with explanatory comments on every field
+- [x] Fields present: projects dirs (a list, even though first run fills one entry), extra projects, username, optional default-branch override, scan depth (default 10), fetch-before-branch (default true)
+- [x] Username is defaulted from `git config user.name`, slugified
+- [x] Home directory comes from the `HOME` environment variable, not a crate
+- [x] A hand-written config with fields omitted loads, with defaults filling the gaps
+- [x] A malformed config produces a clear error naming the file
+- [x] A written config round-trips through load

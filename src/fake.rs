@@ -31,6 +31,7 @@ pub struct FakeHost {
     commands: BTreeMap<String, Output>,
     answers: RefCell<VecDeque<Answer>>,
     now: SystemTime,
+    home: PathBuf,
     log: RefCell<Vec<String>>,
     writes: RefCell<Vec<(PathBuf, String)>>,
     prompts: RefCell<Vec<String>>,
@@ -49,6 +50,7 @@ impl FakeHost {
             commands: BTreeMap::new(),
             answers: RefCell::new(VecDeque::new()),
             now: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+            home: PathBuf::from("/home/dev"),
             log: RefCell::new(Vec::new()),
             writes: RefCell::new(Vec::new()),
             prompts: RefCell::new(Vec::new()),
@@ -94,6 +96,11 @@ impl FakeHost {
 
     pub fn now(mut self, now: SystemTime) -> Self {
         self.now = now;
+        self
+    }
+
+    pub fn home(mut self, home: impl AsRef<Path>) -> Self {
+        self.home = home.as_ref().to_path_buf();
         self
     }
 
@@ -223,6 +230,10 @@ impl Host for FakeHost {
 
     fn now(&self) -> SystemTime {
         self.now
+    }
+
+    fn home(&self) -> Result<PathBuf> {
+        Ok(self.home.clone())
     }
 }
 

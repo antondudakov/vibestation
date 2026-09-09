@@ -73,6 +73,9 @@ pub trait Host {
     fn confirm(&self, message: &str, default: bool) -> Result<bool>;
 
     fn now(&self) -> SystemTime;
+
+    /// The user's home directory, below which config and state live.
+    fn home(&self) -> Result<PathBuf>;
 }
 
 /// The one production implementation.
@@ -150,6 +153,13 @@ impl Host for RealHost {
 
     fn now(&self) -> SystemTime {
         SystemTime::now()
+    }
+
+    fn home(&self) -> Result<PathBuf> {
+        // Constitution §7: Unix only, so `$HOME` is the whole answer and a
+        // crate would be a dependency for one environment variable.
+        let home = std::env::var("HOME").context("HOME is not set")?;
+        Ok(PathBuf::from(home))
     }
 }
 
