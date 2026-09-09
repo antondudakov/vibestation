@@ -38,6 +38,7 @@ pub struct FakeHost {
     log: RefCell<Vec<String>>,
     writes: RefCell<Vec<(PathBuf, String)>>,
     prompts: RefCell<Vec<String>>,
+    options: RefCell<Vec<String>>,
 }
 
 impl Default for FakeHost {
@@ -58,6 +59,7 @@ impl FakeHost {
             log: RefCell::new(Vec::new()),
             writes: RefCell::new(Vec::new()),
             prompts: RefCell::new(Vec::new()),
+            options: RefCell::new(Vec::new()),
         }
     }
 
@@ -133,6 +135,12 @@ impl FakeHost {
     /// select.
     pub fn prompts(&self) -> Vec<String> {
         self.prompts.borrow().clone()
+    }
+
+    /// The options offered at the last [`Host::select`] — the picker's rows as
+    /// the developer would have seen them.
+    pub fn options(&self) -> Vec<String> {
+        self.options.borrow().clone()
     }
 
     fn key(argv: &[&str], cwd: Option<&Path>) -> String {
@@ -220,6 +228,7 @@ impl Host for FakeHost {
     }
 
     fn select(&self, message: &str, options: &[String]) -> Result<usize> {
+        *self.options.borrow_mut() = options.to_vec();
         match self.next_answer(message)? {
             Answer::Select(index) => {
                 assert!(

@@ -13,12 +13,12 @@ then the last day, then the last week, then everything older.
 
 **Blocked by:** 04, 06.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Frecency records (project path, open count, last-opened timestamp) round-trip through a JSON state file
-- [ ] A table of records with known counts and timestamps produces a known ordering, and the decay boundaries are exercised
-- [ ] Projects appear below the session separator, ranked by frecency
-- [ ] Each project's worktrees appear as indented child rows beneath it
-- [ ] The main checkout is visually distinguished from its worktrees; each worktree row shows its branch
-- [ ] Worktree child rows are fuzzy-filterable alongside every other row
-- [ ] A project that already has a live session appears only as its session, not twice
+- [x] Frecency records (project path, open count, last-opened timestamp) round-trip through a JSON state file
+- [x] A table of records with known counts and timestamps produces a known ordering, and the decay boundaries are exercised
+- [x] Projects appear below the session separator, ranked by frecency
+- [x] Each project's worktrees appear as indented child rows beneath it
+- [x] The main checkout is visually distinguished from its worktrees; each worktree row shows its branch
+- [x] Worktree child rows are fuzzy-filterable alongside every other row
+- [x] A project that already has a live session appears only as its session, not twice

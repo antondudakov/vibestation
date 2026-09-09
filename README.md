@@ -3,9 +3,11 @@
 One command, one fuzzy picker: your live tmux sessions on top, your git
 projects below, and a session waiting at the end of either.
 
-Usable as a session switcher today: `vibestation` opens the picker over your
-live tmux sessions and joins the one you choose. Projects, branching and
-worktrees are still to come — see
+Usable today: `vibestation` opens one picker over your live tmux sessions and,
+below them, your git projects ranked by how often and how recently you open
+them, each with its worktrees indented beneath it. Choosing a session joins it;
+choosing a project prints its directory until the next ticket turns that into a
+named session. Branching and worktree creation are still to come — see
 [`specs/001-vibestation-v1.md`](specs/001-vibestation-v1.md) for what v1 does
 and [`specs/001-vibestation-v1/README.md`](specs/001-vibestation-v1/README.md)
 for the tickets that get it there.
