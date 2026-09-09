@@ -5,9 +5,12 @@ projects below, and a session waiting at the end of either.
 
 Usable today: `vibestation` opens one picker over your live tmux sessions and,
 below them, your git projects ranked by how often and how recently you open
-them, each with its worktrees indented beneath it. Choosing a session joins it;
-choosing a project prints its directory until the next ticket turns that into a
-named session. Branching and worktree creation are still to come — see
+them, each with its worktrees indented beneath it. Choosing a session joins it.
+Choosing a project or a worktree settles on a session name — `ada/VBSN-1-init`
+from the branch you are already on, or from one line like `VBSN-1 initialize the
+project` when you are on the default branch — creates the session in the right
+directory and drops you in. Branching and worktree creation are still to come —
+see
 [`specs/001-vibestation-v1.md`](specs/001-vibestation-v1.md) for what v1 does
 and [`specs/001-vibestation-v1/README.md`](specs/001-vibestation-v1/README.md)
 for the tickets that get it there.

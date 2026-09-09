@@ -1,8 +1,9 @@
 //! Reading live tmux sessions: one `list-sessions` call for everything tmux
 //! knows, and one git call per session for the branch it doesn't.
 
+use crate::git;
 use crate::host::Host;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::path::{Path, PathBuf};
 
 /// A live tmux session, as the picker will show it.
@@ -39,7 +40,7 @@ pub fn list(host: &dyn Host) -> Result<Vec<Session>> {
     let mut sessions = Vec::new();
     for line in out.stdout.lines() {
         if let Some(mut session) = parse(line) {
-            session.branch = branch(host, &session.path)?;
+            session.branch = git::branch(host, &session.path)?;
             sessions.push(session);
         }
     }
@@ -62,13 +63,40 @@ fn parse(line: &str) -> Option<Session> {
     })
 }
 
-/// The branch of a directory, empty when it is not a repository.
-fn branch(host: &dyn Host, path: &Path) -> Result<String> {
-    let out = host.run(&["git", "rev-parse", "--abbrev-ref", "HEAD"], Some(path))?;
-    Ok(match out.succeeded() {
-        true => out.trimmed().to_string(),
-        false => String::new(),
-    })
+/// A detached session rooted in `dir`, running the login shell: no startup
+/// command, no window layout.
+///
+/// A session of that name already existing is the resume path rather than a
+/// failure, so it is checked for first. `new-session -A` cannot serve here:
+/// when the session exists it attaches, and `-d` does not stop it — which
+/// outside a terminal is an error and inside tmux would nest a client.
+pub fn create(host: &dyn Host, name: &str, dir: &Path) -> Result<()> {
+    if host
+        .run(&["tmux", "has-session", "-t", name], None)?
+        .succeeded()
+    {
+        return Ok(());
+    }
+
+    let out = host.run(
+        &[
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            name,
+            "-c",
+            &dir.to_string_lossy(),
+        ],
+        None,
+    )?;
+    match out.succeeded() {
+        true => Ok(()),
+        false => Err(anyhow!(
+            "tmux would not create session {name}: {}",
+            out.stderr.trim()
+        )),
+    }
 }
 
 /// Join `name`: switching the current client when run inside tmux, since

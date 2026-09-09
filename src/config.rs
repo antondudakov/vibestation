@@ -3,6 +3,7 @@
 //! is written with a comment on each so the rest is discoverable by reading it.
 
 use crate::host::Host;
+use crate::naming::slugify;
 use anyhow::{anyhow, Result};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -94,19 +95,6 @@ fn username(host: &dyn Host, home: &Path) -> String {
         return configured;
     }
     slugify(&home.file_name().unwrap_or_default().to_string_lossy())
-}
-
-/// Lowercase, alphanumerics and hyphens, runs of hyphens collapsed.
-fn slugify(text: &str) -> String {
-    let mut slug = String::new();
-    for c in text.chars() {
-        if c.is_ascii_alphanumeric() {
-            slug.push(c.to_ascii_lowercase());
-        } else if !slug.ends_with('-') {
-            slug.push('-');
-        }
-    }
-    slug.trim_matches('-').to_string()
 }
 
 fn quote(text: &str) -> String {

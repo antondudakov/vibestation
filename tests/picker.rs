@@ -162,25 +162,3 @@ fn no_tmux_server_leaves_a_picker_of_projects_alone() {
          sessions above there is no separator"
     );
 }
-
-#[test]
-fn choosing_a_project_or_a_worktree_reports_its_directory() {
-    let project = host().answer(Answer::Select(3));
-    let worktree = host().answer(Answer::Select(5));
-
-    vibestation::run(&project).unwrap();
-    vibestation::run(&worktree).unwrap();
-
-    // Ticket 08 makes these a session; for now the only commands are the
-    // session listing and its branch reads.
-    for host in [&project, &worktree] {
-        assert!(
-            !host
-                .log()
-                .iter()
-                .any(|c| c.contains("tmux") && !c.contains("list-sessions")),
-            "nothing was created or joined: {:?}",
-            host.log()
-        );
-    }
-}

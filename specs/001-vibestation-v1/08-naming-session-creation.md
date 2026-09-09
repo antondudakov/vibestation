@@ -11,15 +11,15 @@ towards the project's frecency.
 
 **Blocked by:** 07.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] On a non-default branch the suggested name is `username/<current-branch>` and no prompt is shown
-- [ ] Selecting an existing worktree row creates a session with no prompts
-- [ ] On the default branch, a single prompt collects ticket and description together
-- [ ] Input leading with a ticket-shaped token (uppercase letters, hyphen, digits) has that token split off as the ticket; otherwise the whole input is the description and no ticket prefix is applied
-- [ ] The description is lowercased, reduced to alphanumerics and hyphens, hyphen runs collapsed, truncated to roughly 50 characters
-- [ ] The result is `username/TICKET-description`, or `username/description` with no ticket, presented as an editable default rather than applied silently
-- [ ] Characters tmux forbids in session names are replaced with hyphens; forward slashes are preserved
-- [ ] Sessions are created detached, rooted in the project or worktree directory, running the login shell, with no startup command or window layout
-- [ ] The tool switches the current client if inside tmux and attaches otherwise
-- [ ] The open bumps both count and timestamp in the state file; a worktree selection credits its parent project
+- [x] On a non-default branch the suggested name is `username/<current-branch>` and no prompt is shown
+- [x] Selecting an existing worktree row creates a session with no prompts
+- [x] On the default branch, a single prompt collects ticket and description together
+- [x] Input leading with a ticket-shaped token (uppercase letters, hyphen, digits) has that token split off as the ticket; otherwise the whole input is the description and no ticket prefix is applied
+- [x] The description is lowercased, reduced to alphanumerics and hyphens, hyphen runs collapsed, truncated to roughly 50 characters
+- [x] The result is `username/TICKET-description`, or `username/description` with no ticket, presented as an editable default rather than applied silently
+- [x] Characters tmux forbids in session names are replaced with hyphens; forward slashes are preserved
+- [x] Sessions are created detached, rooted in the project or worktree directory, running the login shell, with no startup command or window layout
+- [x] The tool switches the current client if inside tmux and attaches otherwise
+- [x] The open bumps both count and timestamp in the state file; a worktree selection credits its parent project
