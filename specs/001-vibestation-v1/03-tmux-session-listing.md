@@ -8,13 +8,13 @@ running is a normal cold start, not an error.
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Sessions are read with a single `list-sessions` call using a format string emitting session name, attached-client count, and the active pane's current path and current command
-- [ ] Only the active pane is inspected; other panes and windows are not enumerated
-- [ ] Branch is resolved per session from the active pane's path via git, since tmux cannot supply it
-- [ ] A session whose directory is not a git repository lists with an empty branch rather than a broken row
-- [ ] A session with a client attached is marked
-- [ ] No tmux server yields an empty session list, not a failure
-- [ ] A running server with no sessions yields an empty list
-- [ ] Sessions with unusual names parse correctly
+- [x] Sessions are read with a single `list-sessions` call using a format string emitting session name, attached-client count, and the active pane's current path and current command
+- [x] Only the active pane is inspected; other panes and windows are not enumerated
+- [x] Branch is resolved per session from the active pane's path via git, since tmux cannot supply it
+- [x] A session whose directory is not a git repository lists with an empty branch rather than a broken row
+- [x] A session with a client attached is marked
+- [x] No tmux server yields an empty session list, not a failure
+- [x] A running server with no sessions yields an empty list
+- [x] Sessions with unusual names parse correctly
