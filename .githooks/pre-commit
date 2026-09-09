@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Rebuild dist/ so every commit that changes the build carries binaries built
+# from its own source, stamped with its own build number.
+#
+# Enabled per clone with:  git config core.hooksPath .githooks
+# Skipped for one commit:  git commit --no-verify
+#
+# On a machine with no rust or zig the commit still goes through, with dist/
+# left as it was — a warning, not a wall.
+
+set -euo pipefail
+
+# Only commits that touch what the binary is built from. A docs-only commit
+# would otherwise relink and re-add 4.3M of identical-but-for-the-stamp
+# binaries to history for nothing.
+if ! git diff --cached --name-only --diff-filter=ACMR |
+  grep -qE '^(src/|Cargo\.(toml|lock)$|scripts/build\.sh$)'; then
+  exit 0
+fi
+
+# The commit being made is not in the history yet, so its number is the next
+# one. Its own hash cannot be used: the binaries are part of the commit.
+BUILD_NUMBER=$(($(git rev-list --count HEAD 2>/dev/null || echo 0) + 1))
+export BUILD_NUMBER
+
+status=0
+"$(git rev-parse --show-toplevel)/scripts/build.sh" --quick || status=$?
+
+case $status in
+  0) ;;
+  127)
+    echo "pre-commit: no build toolchain here, dist/ left as it is." >&2
+    exit 0
+    ;;
+  *) exit $status ;;
+esac
+
+git add "$(git rev-parse --show-toplevel)/dist"

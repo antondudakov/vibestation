@@ -9,9 +9,14 @@
 #   dist/vibestation-macos          universal2, Intel and Apple Silicon
 #
 # Commit dist/ afterwards to ship; on the Mac, scripts/install-macos.sh
-# installs from the clone.
+# installs from the clone. The pre-commit hook in .githooks/ runs this for you.
+#
+# Each binary is stamped with a build number — the commit count — so
+# `vibestation --version` says which commit it was built from.
 #
 # Pass --quick to skip the fmt/clippy/test gate.
+# Set BUILD_NUMBER to override the stamp; the hook does, since the commit it
+# is building for does not exist yet.
 
 set -euo pipefail
 
@@ -32,9 +37,18 @@ fi
 for tool in cargo cargo-zigbuild zig; do
   command -v "$tool" >/dev/null || {
     echo "$tool not found; the macOS build needs zig and cargo-zigbuild." >&2
-    exit 1
+    # 127 so the pre-commit hook can tell "no toolchain here" from "build broke"
+    # and let the commit through rather than blocking it.
+    exit 127
   }
 done
+
+# The package version lives only in Cargo.toml; cargo reports it as
+# `path+file:///...#0.1.0`, or `...#name@0.1.0` when the directory is named
+# differently, so take whatever follows the last # or @.
+pkgid="$(cargo pkgid)"
+export VIBESTATION_VERSION="${pkgid##*[#@]} (build ${BUILD_NUMBER:-$(git rev-list --count HEAD)})"
+echo "==> vibestation $VIBESTATION_VERSION"
 
 if [[ "${1:-}" != "--quick" ]]; then
   echo "==> Checking"

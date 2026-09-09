@@ -35,6 +35,24 @@ It runs the same checks CI does, cross-builds both targets and copies them into
 `dist/`. Cross-building macOS from Linux needs `zig` and `cargo-zigbuild`, since
 there is no macOS linker otherwise. Pass `--quick` to skip the check gate.
 
+Each binary is stamped with a build number — the commit count — so
+`vibestation --version` reports `0.1.0 (build 43)` and says which commit it came
+from. A plain `cargo build` is unstamped and reports `0.1.0`, so a dev build
+never claims to be a shipped one. The commit's own hash can't serve here: the
+binaries are part of the commit.
+
+To rebuild `dist/` automatically, enable the checked-in hook once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+It rebuilds and stages `dist/` before each commit that touches `src/`,
+`Cargo.toml`, `Cargo.lock` or the build script — a docs-only commit is left
+alone, since it would otherwise add 4.3M of identical binaries to history.
+On a machine with no toolchain the commit still goes through with a warning.
+`git commit --no-verify` skips it once.
+
 This is a convenience for the pre-release tickets; ticket 12 replaces it with
 GitHub Releases and a Homebrew tap.
 
