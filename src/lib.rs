@@ -1,5 +1,6 @@
 pub mod config;
 pub mod fake;
+pub mod group;
 pub mod host;
 pub mod picker;
 pub mod scan;

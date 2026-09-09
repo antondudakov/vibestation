@@ -18,6 +18,10 @@ fn host() -> FakeHost {
         .file("/home/dev/code/notes/README.md", "not a repo")
         .file("/home/dev/code/a/b/c/d/buried/.git/HEAD", "")
         .file("/home/dev/work/api/.git/HEAD", "")
+        // Grouping asks git about every repository it found; here they are all
+        // plain main checkouts with no worktrees. Worktrees are tests/group.rs.
+        .succeeds("git rev-parse --git-dir --git-common-dir", ".git\n.git\n")
+        .succeeds("git worktree list --porcelain", "")
 }
 
 fn config() -> Config {
@@ -56,8 +60,12 @@ fn every_root_is_scanned_and_nested_or_buried_repositories_are_left_out() {
          carries its parent"
     );
     assert!(
-        host.log().is_empty(),
-        "scanning runs no commands, so it cannot touch the network"
+        host.log()
+            .iter()
+            .all(|command| command.contains("git rev-parse") || command.contains("git worktree")),
+        "scanning reads the disk and asks git about what it found; nothing \
+         reaches the network: {:?}",
+        host.log()
     );
 }
 

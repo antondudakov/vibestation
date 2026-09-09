@@ -4,17 +4,22 @@
 //! ticket 11 surfaces it as the picker's refresh action.
 
 use crate::config::Config;
+use crate::group::{self, Group, Worktree};
 use crate::host::Host;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// A discovered repository. Ticket 06 groups worktrees underneath it.
+/// A project: one main checkout and the worktrees that are the same repository
+/// in another state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Project {
     /// The directory name, prefixed with its parent when that alone collides.
     pub name: String,
     pub path: PathBuf,
+    /// Absent from a cache written before worktrees were grouped.
+    #[serde(default)]
+    pub worktrees: Vec<Worktree>,
 }
 
 pub fn cache_path(host: &dyn Host) -> Result<PathBuf> {
@@ -38,8 +43,9 @@ pub fn load_or_scan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
     Ok(projects)
 }
 
-/// Every repository under the configured roots, plus the manually added ones.
-/// Touches nothing but the filesystem: no git, no network.
+/// Every repository under the configured roots, plus the manually added ones,
+/// collapsed into projects with their worktrees. Reads the filesystem and asks
+/// git about each repository; never the network.
 pub fn scan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
     let mut found: Vec<PathBuf> = Vec::new();
     for root in &config.projects_dirs {
@@ -66,7 +72,7 @@ pub fn scan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
             found.push(extra.clone());
         }
     }
-    Ok(name(found))
+    Ok(name(group::group(host, &found)?))
 }
 
 /// Directory names, disambiguated by their parent where two roots hold the
@@ -76,27 +82,28 @@ pub fn scan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
 /// ponytail: one level of parent is enough for every layout seen so far; if
 /// the parents collide too, the loser is still identifiable by its path in the
 /// picker row.
-fn name(paths: Vec<PathBuf>) -> Vec<Project> {
+fn name(groups: Vec<Group>) -> Vec<Project> {
     let base = |path: &Path| {
         path.file_name()
             .unwrap_or(path.as_os_str())
             .to_string_lossy()
             .into_owned()
     };
-    paths
+    groups
         .iter()
-        .map(|path| {
-            let bare = base(path);
-            let collides = paths
+        .map(|group| {
+            let bare = base(&group.main);
+            let collides = groups
                 .iter()
-                .any(|other| other != path && base(other) == bare);
-            let name = match (collides, path.parent()) {
+                .any(|other| other.main != group.main && base(&other.main) == bare);
+            let name = match (collides, group.main.parent()) {
                 (true, Some(parent)) => format!("{}/{bare}", base(parent)),
                 _ => bare,
             };
             Project {
                 name,
-                path: path.clone(),
+                path: group.main.clone(),
+                worktrees: group.worktrees.clone(),
             }
         })
         .collect()
