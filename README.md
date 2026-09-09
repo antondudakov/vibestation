@@ -25,16 +25,15 @@ run from a clone. It pulls, installs into `~/.local/bin` and ad-hoc signs the
 binary — the macOS build is cross-compiled on Linux, so it arrives unsigned and
 Apple Silicon will not run it otherwise.
 
-Rebuild both:
+Rebuild both with one command, then commit `dist/` to ship:
 
 ```sh
-cargo build --release --target x86_64-unknown-linux-musl
-cp target/x86_64-unknown-linux-musl/release/vibestation dist/vibestation-x86_64-linux
-
-# needs zig and cargo-zigbuild; macOS has no linker on Linux without them
-cargo zigbuild --release --target universal2-apple-darwin
-cp target/universal2-apple-darwin/release/vibestation dist/vibestation-macos
+./scripts/build.sh
 ```
+
+It runs the same checks CI does, cross-builds both targets and copies them into
+`dist/`. Cross-building macOS from Linux needs `zig` and `cargo-zigbuild`, since
+there is no macOS linker otherwise. Pass `--quick` to skip the check gate.
 
 This is a convenience for the pre-release tickets; ticket 12 replaces it with
 GitHub Releases and a Homebrew tap.
