@@ -2,6 +2,7 @@ pub mod config;
 pub mod fake;
 pub mod host;
 pub mod picker;
+pub mod scan;
 pub mod tmux;
 
 use anyhow::Result;

@@ -9,13 +9,13 @@ instant rather than rescanning the disk.
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] More than one projects directory can be configured and all are scanned
-- [ ] The walk stops descending at the first `.git` it finds, so submodules and vendored repositories are not listed
-- [ ] The walk respects the configured depth cap
-- [ ] Symlinks are skipped, so the scan cannot loop or wander outside the configured roots
-- [ ] Manually configured extra projects are merged in and deduplicated against scan results
-- [ ] Two same-named directories in different roots each show their parent directory to disambiguate; unambiguous names stay bare
-- [ ] The discovered list is written to a JSON cache under the vibestation directory
-- [ ] The scan performs no network access
+- [x] More than one projects directory can be configured and all are scanned
+- [x] The walk stops descending at the first `.git` it finds, so submodules and vendored repositories are not listed
+- [x] The walk respects the configured depth cap
+- [x] Symlinks are skipped, so the scan cannot loop or wander outside the configured roots
+- [x] Manually configured extra projects are merged in and deduplicated against scan results
+- [x] Two same-named directories in different roots each show their parent directory to disambiguate; unambiguous names stay bare
+- [x] The discovered list is written to a JSON cache under the vibestation directory
+- [x] The scan performs no network access
