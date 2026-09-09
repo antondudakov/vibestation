@@ -45,8 +45,9 @@ pub fn run(host: &dyn Host) -> Result<()> {
     }
 }
 
-/// Start work: settle on a session name, create the session in the directory
-/// the work lives in, count the open against the project, and join it.
+/// Start work: settle on a session name, offer to cut the branch it names,
+/// create the session in the directory the work lives in, count the open
+/// against the project, and join it.
 fn open(
     host: &dyn Host,
     config: &Config,
@@ -65,9 +66,12 @@ fn open(
     };
 
     // A worktree row, or a checkout already on a feature branch, is work in
-    // progress: its branch names it and nothing is asked. Ticket 09 offers the
-    // branch itself once the name is settled.
-    let started = worktree.is_some() || (!branch.is_empty() && !git::is_default(config, &branch));
+    // progress: its branch names it, nothing is asked and no branch is cut.
+    let default = match worktree.is_some() || branch.is_empty() {
+        true => String::new(),
+        false => git::default_branch(host, config, dir)?,
+    };
+    let started = !branch.is_empty() && branch != default;
     let name = match started {
         true => naming::from_branch(&config.username, &label(dir, &branch)),
         false => {
@@ -77,10 +81,54 @@ fn open(
         }
     };
 
+    if !started && !branch.is_empty() && name != branch {
+        cut_branch(host, config, dir, &name, &default)?;
+    }
+
     tmux::create(host, &name, dir)?;
     // Frecency is tracked against the project, so a worktree credits its parent.
     state::record(host, &project.path)?;
     tmux::attach(host, &name)
+}
+
+/// Offer the branch the session was just named for, cut in place in this
+/// checkout — or not at all, which still gets the session on the current
+/// branch. Ticket 10 adds the third option, a worktree.
+///
+/// The fetch is opt-in, pre-answered from config, and never fatal: a remote
+/// that cannot be reached costs a warning and the local ref.
+fn cut_branch(
+    host: &dyn Host,
+    config: &Config,
+    dir: &Path,
+    name: &str,
+    default: &str,
+) -> Result<()> {
+    if git::is_dirty(host, dir)? {
+        println!(
+            "uncommitted changes in {}, staying on {default}",
+            dir.display()
+        );
+        return Ok(());
+    }
+    if !host.confirm(&format!("Create branch {name}?"), true)? {
+        return Ok(());
+    }
+
+    // Cutting from `origin/<default>` rather than fast-forwarding the local
+    // ref: nothing existing is touched, so divergence cannot fail the cut.
+    let mut base = default.to_string();
+    if host.confirm("Fetch origin first?", config.fetch_before_branch)? {
+        let out = git::fetch(host, dir)?;
+        match out.succeeded() {
+            true => base = format!("origin/{default}"),
+            false => println!(
+                "fetch failed ({}), branching from local {default}",
+                out.stderr.trim()
+            ),
+        }
+    }
+    git::create_branch(host, dir, name, &base)
 }
 
 /// What to name work by when it has a branch — or, for a detached worktree and

@@ -18,14 +18,14 @@ explanation, not offered and then refused.
 
 **Blocked by:** 08.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The default branch is detected through the fallback chain `origin/HEAD`, then `main`, then `master`, each stage exercised
-- [ ] A config override for the default branch takes precedence, so a repository on `develop` works
-- [ ] A branch is offered only when the accepted session name differs from the current branch — never on the resume path or after selecting an existing worktree
-- [ ] Declining the branch still creates the session on the current branch and mutates no git state
-- [ ] A fetch confirmation precedes branch creation, pre-answered from config; declining emits no fetch
-- [ ] On fetch success the branch is cut from `origin/<default>`; the local default branch ref is never modified
-- [ ] A failing fetch produces a warning and a branch cut from the local ref rather than an abort
-- [ ] No fetch is emitted anywhere on the path to an existing session
-- [ ] With uncommitted changes the in-place option is withheld with an explanation
+- [x] The default branch is detected through the fallback chain `origin/HEAD`, then `main`, then `master`, each stage exercised
+- [x] A config override for the default branch takes precedence, so a repository on `develop` works
+- [x] A branch is offered only when the accepted session name differs from the current branch — never on the resume path or after selecting an existing worktree
+- [x] Declining the branch still creates the session on the current branch and mutates no git state
+- [x] A fetch confirmation precedes branch creation, pre-answered from config; declining emits no fetch
+- [x] On fetch success the branch is cut from `origin/<default>`; the local default branch ref is never modified
+- [x] A failing fetch produces a warning and a branch cut from the local ref rather than an abort
+- [x] No fetch is emitted anywhere on the path to an existing session
+- [x] With uncommitted changes the in-place option is withheld with an explanation

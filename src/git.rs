@@ -1,10 +1,10 @@
-//! Reading git state. Every call here is local — constitution §3 keeps the
-//! network off the path to a session, and the one fetch that is allowed
-//! arrives with ticket 09.
+//! Reading and changing git state. Everything here is local except [`fetch`],
+//! the one network call constitution §3 allows: opt-in, immediately before a
+//! branch is cut, and never fatal.
 
 use crate::config::Config;
-use crate::host::Host;
-use anyhow::Result;
+use crate::host::{Host, Output};
+use anyhow::{anyhow, Result};
 use std::path::Path;
 
 /// The branch checked out in `path`, empty when it is not a repository.
@@ -16,15 +16,55 @@ pub fn branch(host: &dyn Host, path: &Path) -> Result<String> {
     })
 }
 
-/// Whether `branch` is the one new work would be cut from, and so the one that
-/// means "this checkout has nothing started on it yet".
-///
-/// ponytail: the configured override and the two conventional names, which is
-/// every repository that is not deliberately unusual. Ticket 09 replaces this
-/// with the `origin/HEAD` → `main` → `master` detection.
-pub fn is_default(config: &Config, branch: &str) -> bool {
-    match &config.default_branch {
-        Some(default) => branch == default,
-        None => branch == "main" || branch == "master",
+/// The branch new work is cut from: the configured override, else what
+/// `origin/HEAD` points at, else whichever of `main` and `master` exists.
+pub fn default_branch(host: &dyn Host, config: &Config, path: &Path) -> Result<String> {
+    if let Some(configured) = &config.default_branch {
+        return Ok(configured.clone());
+    }
+
+    let head = host.run(
+        &["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        Some(path),
+    )?;
+    if head.succeeded() {
+        // `origin/main` — the remote name is not part of the branch name.
+        if let Some((_, branch)) = head.trimmed().rsplit_once('/') {
+            return Ok(branch.to_string());
+        }
+    }
+
+    let main = host.run(
+        &["git", "rev-parse", "--verify", "--quiet", "refs/heads/main"],
+        Some(path),
+    )?;
+    Ok(match main.succeeded() {
+        true => "main",
+        false => "master",
+    }
+    .to_string())
+}
+
+/// Whether the checkout has uncommitted changes, and so must not be branched
+/// in place. A path git cannot report on counts as clean: there is nothing to
+/// lose there.
+pub fn is_dirty(host: &dyn Host, path: &Path) -> Result<bool> {
+    let out = host.run(&["git", "status", "--porcelain"], Some(path))?;
+    Ok(out.succeeded() && !out.trimmed().is_empty())
+}
+
+pub fn fetch(host: &dyn Host, path: &Path) -> Result<Output> {
+    host.run(&["git", "fetch", "origin"], Some(path))
+}
+
+/// Cut `name` from `base` in the existing checkout and switch to it.
+pub fn create_branch(host: &dyn Host, path: &Path, name: &str, base: &str) -> Result<()> {
+    let out = host.run(&["git", "checkout", "-b", name, base], Some(path))?;
+    match out.succeeded() {
+        true => Ok(()),
+        false => Err(anyhow!(
+            "git would not create branch {name}: {}",
+            out.stderr.trim()
+        )),
     }
 }

@@ -7,6 +7,7 @@ use vibestation::state;
 
 const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{session_name}";
 const BRANCH: &str = "git rev-parse --abbrev-ref HEAD";
+const ORIGIN_HEAD: &str = "git symbolic-ref --short refs/remotes/origin/HEAD";
 const CONFIG: &str = "/home/dev/.vibestation/config.toml";
 const CACHE: &str = "/home/dev/.vibestation/projects-cache.json";
 
@@ -33,6 +34,14 @@ fn host() -> FakeHost {
         .succeeds(
             &format!("/home/dev/code/notes $ {BRANCH}"),
             "ada/notes-tidy\n",
+        )
+        .succeeds(
+            &format!("/home/dev/code/api $ {ORIGIN_HEAD}"),
+            "origin/main\n",
+        )
+        .succeeds(
+            &format!("/home/dev/code/notes $ {ORIGIN_HEAD}"),
+            "origin/main\n",
         )
 }
 
@@ -68,10 +77,12 @@ fn a_checkout_on_the_default_branch_asks_once_and_offers_the_name() {
             "tmux new-session -d -s ada/VBSN-4-picker-rows -c /home/dev/code/api",
             "",
         )
+        .succeeds("/home/dev/code/api $ git status --porcelain", "")
         .answers([
             Answer::Select(0),
             Answer::text("VBSN-4 picker rows"),
             Answer::text("ada/VBSN-4-picker-rows"),
+            Answer::Confirm(false),
         ]);
 
     vibestation::run(&host).unwrap();
@@ -82,6 +93,7 @@ fn a_checkout_on_the_default_branch_asks_once_and_offers_the_name() {
             "Open",
             "What are you working on? []",
             "Session name [ada/VBSN-4-picker-rows]",
+            "Create branch ada/VBSN-4-picker-rows? [Y/n]",
         ],
         "one line collects ticket and description, and the generated name is \
          offered rather than applied"
@@ -99,10 +111,12 @@ fn an_edited_name_is_the_one_used() {
             "tmux new-session -d -s ada/something-else -c /home/dev/code/api",
             "",
         )
+        .succeeds("/home/dev/code/api $ git status --porcelain", "")
         .answers([
             Answer::Select(0),
             Answer::text("VBSN-4 picker rows"),
             Answer::text("ada/something.else"),
+            Answer::Confirm(false),
         ]);
 
     vibestation::run(&host).unwrap();
