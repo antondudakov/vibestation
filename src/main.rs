@@ -1,5 +1,5 @@
 use clap::Parser;
-use vibestation::host::RealHost;
+use vibestation::host::{aborted, RealHost};
 
 /// One picker for your tmux sessions and git projects.
 #[derive(Parser)]
@@ -21,6 +21,10 @@ const VERSION: &str = match option_env!("VIBESTATION_VERSION") {
 fn main() {
     Cli::parse();
     if let Err(e) = vibestation::run(&RealHost) {
+        // Dismissing the picker is not a failure: it costs nothing and says so.
+        if aborted(&e) {
+            return;
+        }
         eprintln!("vibestation: {e:#}");
         std::process::exit(1);
     }

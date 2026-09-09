@@ -70,3 +70,14 @@ fn branch(host: &dyn Host, path: &Path) -> Result<String> {
         false => String::new(),
     })
 }
+
+/// Join `name`: switching the current client when run inside tmux, since
+/// attaching there would nest a client inside its own session, and attaching
+/// otherwise. This replaces the process, so it is the last thing the tool does.
+pub fn attach(host: &dyn Host, name: &str) -> Result<()> {
+    let verb = match host.in_tmux() {
+        true => "switch-client",
+        false => "attach-session",
+    };
+    host.exec(&["tmux", verb, "-t", name])
+}

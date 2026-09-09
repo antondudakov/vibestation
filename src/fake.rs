@@ -3,7 +3,7 @@
 //! answers, run the application, then assert on the command log and the file
 //! writes. Those two are the tool's entire observable effect on the world.
 
-use crate::host::{Host, Output};
+use crate::host::{Aborted, Host, Output};
 use anyhow::Result;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -18,6 +18,8 @@ pub enum Answer {
     Select(usize),
     Text(String),
     Confirm(bool),
+    /// Esc or Ctrl-C at any prompt.
+    Abort,
 }
 
 impl Answer {
@@ -32,6 +34,7 @@ pub struct FakeHost {
     answers: RefCell<VecDeque<Answer>>,
     now: SystemTime,
     home: PathBuf,
+    in_tmux: bool,
     log: RefCell<Vec<String>>,
     writes: RefCell<Vec<(PathBuf, String)>>,
     prompts: RefCell<Vec<String>>,
@@ -51,6 +54,7 @@ impl FakeHost {
             answers: RefCell::new(VecDeque::new()),
             now: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
             home: PathBuf::from("/home/dev"),
+            in_tmux: false,
             log: RefCell::new(Vec::new()),
             writes: RefCell::new(Vec::new()),
             prompts: RefCell::new(Vec::new()),
@@ -104,6 +108,11 @@ impl FakeHost {
         self
     }
 
+    pub fn in_tmux(mut self, in_tmux: bool) -> Self {
+        self.in_tmux = in_tmux;
+        self
+    }
+
     /// Every command run, in order, in the same form as the scripting keys.
     pub fn log(&self) -> Vec<String> {
         self.log.borrow().clone()
@@ -133,12 +142,17 @@ impl FakeHost {
         }
     }
 
-    fn next_answer(&self, message: &str) -> Answer {
+    fn next_answer(&self, message: &str) -> Result<Answer> {
         self.prompts.borrow_mut().push(message.to_string());
-        self.answers
+        match self
+            .answers
             .borrow_mut()
             .pop_front()
             .unwrap_or_else(|| panic!("no scripted answer left for prompt {message:?}"))
+        {
+            Answer::Abort => Err(Aborted.into()),
+            answered => Ok(answered),
+        }
     }
 
     /// Directories implied by the virtual filesystem, since it stores files only.
@@ -198,8 +212,15 @@ impl Host for FakeHost {
             .collect())
     }
 
+    fn exec(&self, argv: &[&str]) -> Result<()> {
+        // The real host never returns from this; the fake records it and lets
+        // the test see that it was the last thing emitted.
+        self.log.borrow_mut().push(FakeHost::key(argv, None));
+        Ok(())
+    }
+
     fn select(&self, message: &str, options: &[String]) -> Result<usize> {
-        match self.next_answer(message) {
+        match self.next_answer(message)? {
             Answer::Select(index) => {
                 assert!(
                     index < options.len(),
@@ -212,7 +233,7 @@ impl Host for FakeHost {
     }
 
     fn input(&self, message: &str, default: &str) -> Result<String> {
-        match self.next_answer(&format!("{message} [{default}]")) {
+        match self.next_answer(&format!("{message} [{default}]"))? {
             Answer::Text(text) => Ok(text),
             other => panic!("prompt {message:?} is free text, but the next answer is {other:?}"),
         }
@@ -220,7 +241,7 @@ impl Host for FakeHost {
 
     fn confirm(&self, message: &str, default: bool) -> Result<bool> {
         let label = format!("{message} [{}]", if default { "Y/n" } else { "y/N" });
-        match self.next_answer(&label) {
+        match self.next_answer(&label)? {
             Answer::Confirm(yes) => Ok(yes),
             other => {
                 panic!("prompt {message:?} is a confirmation, but the next answer is {other:?}")
@@ -230,6 +251,10 @@ impl Host for FakeHost {
 
     fn now(&self) -> SystemTime {
         self.now
+    }
+
+    fn in_tmux(&self) -> bool {
+        self.in_tmux
     }
 
     fn home(&self) -> Result<PathBuf> {

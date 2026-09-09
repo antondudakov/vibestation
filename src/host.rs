@@ -4,6 +4,7 @@
 //! files it wrote.
 
 use anyhow::{Context, Result};
+use std::fmt;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -46,6 +47,25 @@ impl Output {
     }
 }
 
+/// The user dismissed a prompt with Esc or Ctrl-C. Carried as an error so that
+/// every prompt aborts with a plain `?` and unwinds having emitted nothing;
+/// [`aborted`] tells it apart from a real failure at the top.
+#[derive(Debug)]
+pub struct Aborted;
+
+impl fmt::Display for Aborted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("aborted")
+    }
+}
+
+impl std::error::Error for Aborted {}
+
+/// Whether an error is the user walking away from a prompt rather than a fault.
+pub fn aborted(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<Aborted>().is_some()
+}
+
 pub trait Host {
     /// Run `argv`, optionally in `cwd`. A non-zero exit is a normal outcome
     /// reported in [`Output::status`], not an error; `Err` means the command
@@ -64,7 +84,12 @@ pub trait Host {
     /// symlinks. Unreadable directories are skipped rather than failing.
     fn walk(&self, root: &Path, max_depth: usize) -> Result<Vec<PathBuf>>;
 
-    /// Choose one of `options`, returning its index.
+    /// Replace this process with `argv`. Returns only on failure: handing the
+    /// terminal to `tmux attach-session` is the last thing the tool does, and
+    /// an attach without the real terminal behind it is not an attach.
+    fn exec(&self, argv: &[&str]) -> Result<()>;
+
+    /// Choose one of `options`, returning its index. Typing filters the list.
     fn select(&self, message: &str, options: &[String]) -> Result<usize>;
 
     /// Free text, pre-filled with an editable `default`.
@@ -73,6 +98,10 @@ pub trait Host {
     fn confirm(&self, message: &str, default: bool) -> Result<bool>;
 
     fn now(&self) -> SystemTime;
+
+    /// Whether the tool is running inside a tmux client, which decides between
+    /// switching that client and attaching a new one.
+    fn in_tmux(&self) -> bool;
 
     /// The user's home directory, below which config and state live.
     fn home(&self) -> Result<PathBuf>;
@@ -133,26 +162,43 @@ impl Host for RealHost {
             .collect())
     }
 
+    fn exec(&self, argv: &[&str]) -> Result<()> {
+        use std::os::unix::process::CommandExt;
+        let (bin, args) = argv.split_first().context("exec called with empty argv")?;
+        // `exec` returns only when it failed to replace the process.
+        Err(anyhow::Error::new(Command::new(bin).args(args).exec()))
+            .with_context(|| format!("running `{}`", argv.join(" ")))
+    }
+
     fn select(&self, message: &str, options: &[String]) -> Result<usize> {
-        Ok(inquire::Select::new(message, options.to_vec())
-            .raw_prompt()?
-            .index)
+        // inquire's default scorer is a skim fuzzy match, so `vbsn3` finds
+        // `ada/VBSN-3-tmux` and no external `fzf` is needed.
+        prompt(inquire::Select::new(message, options.to_vec()).raw_prompt())
+            .map(|choice| choice.index)
     }
 
     fn input(&self, message: &str, default: &str) -> Result<String> {
-        Ok(inquire::Text::new(message)
-            .with_initial_value(default)
-            .prompt()?)
+        prompt(
+            inquire::Text::new(message)
+                .with_initial_value(default)
+                .prompt(),
+        )
     }
 
     fn confirm(&self, message: &str, default: bool) -> Result<bool> {
-        Ok(inquire::Confirm::new(message)
-            .with_default(default)
-            .prompt()?)
+        prompt(
+            inquire::Confirm::new(message)
+                .with_default(default)
+                .prompt(),
+        )
     }
 
     fn now(&self) -> SystemTime {
         SystemTime::now()
+    }
+
+    fn in_tmux(&self) -> bool {
+        std::env::var_os("TMUX").is_some_and(|value| !value.is_empty())
     }
 
     fn home(&self) -> Result<PathBuf> {
@@ -160,6 +206,15 @@ impl Host for RealHost {
         // crate would be a dependency for one environment variable.
         let home = std::env::var("HOME").context("HOME is not set")?;
         Ok(PathBuf::from(home))
+    }
+}
+
+/// inquire reports Esc and Ctrl-C as errors; here they are an abort.
+fn prompt<T>(result: inquire::error::InquireResult<T>) -> Result<T> {
+    use inquire::InquireError::{OperationCanceled, OperationInterrupted};
+    match result {
+        Err(OperationCanceled | OperationInterrupted) => Err(Aborted.into()),
+        other => Ok(other?),
     }
 }
 
