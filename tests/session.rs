@@ -82,7 +82,7 @@ fn a_checkout_on_the_default_branch_asks_once_and_offers_the_name() {
             Answer::Select(0),
             Answer::text("VBSN-4 picker rows"),
             Answer::text("ada/VBSN-4-picker-rows"),
-            Answer::Confirm(false),
+            Answer::Select(2),
         ]);
 
     vibestation::run(&host).unwrap();
@@ -93,7 +93,7 @@ fn a_checkout_on_the_default_branch_asks_once_and_offers_the_name() {
             "Open",
             "What are you working on? []",
             "Session name [ada/VBSN-4-picker-rows]",
-            "Create branch ada/VBSN-4-picker-rows? [Y/n]",
+            "Create branch ada/VBSN-4-picker-rows?",
         ],
         "one line collects ticket and description, and the generated name is \
          offered rather than applied"
@@ -116,7 +116,7 @@ fn an_edited_name_is_the_one_used() {
             Answer::Select(0),
             Answer::text("VBSN-4 picker rows"),
             Answer::text("ada/something.else"),
-            Answer::Confirm(false),
+            Answer::Select(2),
         ]);
 
     vibestation::run(&host).unwrap();

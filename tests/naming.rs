@@ -53,3 +53,19 @@ fn characters_tmux_forbids_are_replaced_and_slashes_survive() {
     );
     assert_eq!(naming::sanitize("a.b:c/d"), "a-b-c/d");
 }
+
+#[test]
+fn a_worktree_is_a_sibling_named_for_the_project_and_the_branch() {
+    let main = std::path::Path::new("/home/dev/code/vibestation");
+
+    assert_eq!(
+        naming::worktree_dir(main, "ada", "ada/VBSN-1-init"),
+        std::path::Path::new("/home/dev/code/vibestation-VBSN-1-init"),
+        "the username prefix is the tool's own convention, not part of the name"
+    );
+    assert_eq!(
+        naming::worktree_dir(main, "ada", "team/ada/fix"),
+        std::path::Path::new("/home/dev/code/vibestation-team-ada-fix"),
+        "a branch of somebody else's shape still yields one directory"
+    );
+}

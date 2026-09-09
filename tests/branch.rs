@@ -74,7 +74,7 @@ fn origin_head_names_the_default_branch() {
                 "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy origin/develop",
                 "",
             ),
-        [Answer::Confirm(true), Answer::Confirm(true)],
+        [Answer::Select(1), Answer::Confirm(true)],
     );
 
     vibestation::run(&host).unwrap();
@@ -97,7 +97,7 @@ fn without_origin_head_a_local_main_is_the_default_branch() {
                 "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy main",
                 "",
             ),
-        [Answer::Confirm(true), Answer::Confirm(false)],
+        [Answer::Select(1), Answer::Confirm(false)],
     );
 
     vibestation::run(&host).unwrap();
@@ -118,7 +118,7 @@ fn without_either_the_default_branch_is_master() {
                 "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy master",
                 "",
             ),
-        [Answer::Confirm(true), Answer::Confirm(false)],
+        [Answer::Select(1), Answer::Confirm(false)],
     );
 
     vibestation::run(&host).unwrap();
@@ -134,7 +134,7 @@ fn a_configured_default_branch_wins_and_asks_git_nothing() {
         host("projects_dirs = [\"/home/dev/code\"]\nusername = \"ada\"\ndefault_branch = \"develop\"\n")
             .succeeds(BRANCH, "develop\n")
             .succeeds("/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy develop", ""),
-        [Answer::Confirm(true), Answer::Confirm(false)],
+        [Answer::Select(1), Answer::Confirm(false)],
     );
 
     vibestation::run(&host).unwrap();
@@ -156,7 +156,7 @@ fn accepting_the_fetch_cuts_from_the_remote_ref_and_touches_no_local_one() {
             "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy origin/main",
             "",
         ),
-        [Answer::Confirm(true), Answer::Confirm(true)],
+        [Answer::Select(1), Answer::Confirm(true)],
     );
 
     vibestation::run(&host).unwrap();
@@ -164,7 +164,8 @@ fn accepting_the_fetch_cuts_from_the_remote_ref_and_touches_no_local_one() {
     assert_eq!(
         host.prompts().last().unwrap(),
         "Fetch origin first? [Y/n]",
-        "the confirmation is pre-answered from fetch_before_branch"
+        "the fetch confirmation follows the strategy choice, pre-answered \
+         from fetch_before_branch"
     );
     assert_eq!(
         git(&host).last().unwrap(),
@@ -191,7 +192,7 @@ fn declining_the_fetch_emits_none_and_cuts_from_the_local_ref() {
             "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy main",
             "",
         ),
-        [Answer::Confirm(true), Answer::Confirm(false)],
+        [Answer::Select(1), Answer::Confirm(false)],
     );
 
     vibestation::run(&host).unwrap();
@@ -211,7 +212,7 @@ fn the_fetch_default_comes_from_config() {
             .succeeds(BRANCH, "main\n")
             .succeeds(ORIGIN_HEAD, "origin/main\n")
             .succeeds("/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy main", ""),
-        [Answer::Confirm(true), Answer::Confirm(false)],
+        [Answer::Select(1), Answer::Confirm(false)],
     );
 
     vibestation::run(&host).unwrap();
@@ -228,7 +229,7 @@ fn a_failing_fetch_warns_and_branches_from_the_local_ref() {
                 "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy main",
                 "",
             ),
-        [Answer::Confirm(true), Answer::Confirm(true)],
+        [Answer::Select(1), Answer::Confirm(true)],
     );
 
     vibestation::run(&host).unwrap();
@@ -248,7 +249,7 @@ fn a_failing_fetch_warns_and_branches_from_the_local_ref() {
 
 #[test]
 fn declining_the_branch_still_opens_the_session_and_mutates_nothing() {
-    let host = choosing(detected(), [Answer::Confirm(false)]);
+    let host = choosing(detected(), [Answer::Select(2)]);
 
     vibestation::run(&host).unwrap();
 
@@ -266,25 +267,27 @@ fn declining_the_branch_still_opens_the_session_and_mutates_nothing() {
 }
 
 #[test]
-fn a_dirty_checkout_is_told_why_rather_than_offered_the_branch() {
-    let host = choosing(detected().succeeds(STATUS, " M src/lib.rs\n"), []);
+fn a_dirty_checkout_keeps_the_worktree_option_and_loses_the_in_place_one() {
+    let host = choosing(
+        detected().succeeds(STATUS, " M src/lib.rs\n"),
+        [Answer::Select(1)],
+    );
 
     vibestation::run(&host).unwrap();
 
     assert_eq!(
-        host.prompts(),
+        host.options(),
         [
-            "Open",
-            "What are you working on? []",
-            "Session name [ada/VBSN-4-tidy]",
+            "New worktree at /home/dev/code/api-VBSN-4-tidy",
+            "Neither, stay on main",
         ],
-        "the option is withheld, not offered and then refused"
+        "work in progress does not block starting something new"
     );
     assert!(!git(&host).iter().any(|c| c.contains("checkout -b")));
     assert_eq!(
         host.log().last().unwrap(),
         "tmux attach-session -t ada/VBSN-4-tidy",
-        "the session is still created, on the current branch"
+        "and the session is still created, on the current branch"
     );
 }
 
@@ -338,4 +341,119 @@ fn a_name_that_is_already_the_current_branch_offers_no_branch() {
         git(&host)
     );
     assert_eq!(host.log().last().unwrap(), "tmux attach-session -t main");
+}
+
+#[test]
+fn the_worktree_is_the_pre_selected_option_and_lands_beside_the_checkout() {
+    let host = choosing(
+        detected().succeeds(FETCH, "").succeeds(
+            "/home/dev/code/api $ git worktree add -b ada/VBSN-4-tidy \
+             /home/dev/code/api-VBSN-4-tidy origin/main",
+            "",
+        ),
+        [Answer::Select(0), Answer::Confirm(true)],
+    )
+    .fails(
+        "tmux has-session -t ada/VBSN-4-tidy",
+        1,
+        "can't find session",
+    )
+    .succeeds(
+        "tmux new-session -d -s ada/VBSN-4-tidy -c /home/dev/code/api-VBSN-4-tidy",
+        "",
+    );
+
+    vibestation::run(&host).unwrap();
+
+    assert_eq!(
+        host.options(),
+        [
+            "New worktree at /home/dev/code/api-VBSN-4-tidy",
+            "Branch in place in /home/dev/code/api",
+            "Neither, stay on main",
+        ],
+        "the always-safe option is the one keypress choice, and the directory \
+         is the project name joined to the branch without its username prefix"
+    );
+    assert_eq!(
+        git(&host).last().unwrap(),
+        "/home/dev/code/api $ git worktree add -b ada/VBSN-4-tidy \
+         /home/dev/code/api-VBSN-4-tidy origin/main",
+        "branch and worktree are one operation, cut from the fetched ref"
+    );
+    assert_eq!(
+        host.log().last().unwrap(),
+        "tmux attach-session -t ada/VBSN-4-tidy",
+        "and the session is rooted in the worktree"
+    );
+}
+
+#[test]
+fn an_existing_worktree_on_that_branch_is_reused_rather_than_recreated() {
+    let host = choosing(
+        detected()
+            .file(
+                "/home/dev/code/api-VBSN-4-tidy/.git",
+                "gitdir: /home/dev/code/api/.git/worktrees/tidy",
+            )
+            .succeeds(
+                "/home/dev/code/api $ git worktree list --porcelain",
+                "worktree /home/dev/code/api\nbranch refs/heads/main\n\n\
+                 worktree /home/dev/code/api-VBSN-4-tidy\nbranch refs/heads/ada/VBSN-4-tidy\n",
+            ),
+        [Answer::Select(0)],
+    )
+    .fails(
+        "tmux has-session -t ada/VBSN-4-tidy",
+        1,
+        "can't find session",
+    )
+    .succeeds(
+        "tmux new-session -d -s ada/VBSN-4-tidy -c /home/dev/code/api-VBSN-4-tidy",
+        "",
+    );
+
+    vibestation::run(&host).unwrap();
+
+    assert!(
+        !git(&host).iter().any(|c| c.contains("worktree add")),
+        "repeating the action is harmless: {:?}",
+        git(&host)
+    );
+    assert!(
+        !git(&host).iter().any(|c| c.contains("fetch")),
+        "and no branch is cut, so nothing is fetched"
+    );
+    assert_eq!(
+        host.log().last().unwrap(),
+        "tmux attach-session -t ada/VBSN-4-tidy"
+    );
+}
+
+#[test]
+fn a_path_occupied_by_anything_else_stops_the_operation() {
+    let host = choosing(
+        detected()
+            .file("/home/dev/code/api-VBSN-4-tidy/notes.md", "not a worktree")
+            .succeeds(
+                "/home/dev/code/api $ git worktree list --porcelain",
+                "worktree /home/dev/code/api\nbranch refs/heads/main\n",
+            ),
+        [Answer::Select(0)],
+    );
+
+    let error = vibestation::run(&host).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("/home/dev/code/api-VBSN-4-tidy"),
+        "the message names the path: {error:#}"
+    );
+    assert!(
+        !git(&host).iter().any(|c| c.contains("worktree add")),
+        "vibestation never writes into a directory it did not create"
+    );
+    assert!(
+        !host.log().iter().any(|c| c.starts_with("tmux new-session")),
+        "and no session is created over it"
+    );
 }

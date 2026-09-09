@@ -9,12 +9,12 @@ pub mod scan;
 pub mod state;
 pub mod tmux;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use config::Config;
 use host::Host;
 use picker::Row;
 use scan::Project;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The single entry point tests drive: settle the config, open one picker over
 /// the live sessions and the ranked projects, and act on the choice.
@@ -45,9 +45,9 @@ pub fn run(host: &dyn Host) -> Result<()> {
     }
 }
 
-/// Start work: settle on a session name, offer to cut the branch it names,
-/// create the session in the directory the work lives in, count the open
-/// against the project, and join it.
+/// Start work: settle on a session name, offer to cut the branch it names —
+/// in a new worktree or in place — create the session in the directory the
+/// work now lives in, count the open against the project, and join it.
 fn open(
     host: &dyn Host,
     config: &Config,
@@ -81,54 +81,103 @@ fn open(
         }
     };
 
-    if !started && !branch.is_empty() && name != branch {
-        cut_branch(host, config, dir, &name, &default)?;
-    }
+    let dir = match !started && !branch.is_empty() && name != branch {
+        true => branch_for(host, config, dir, &name, &default)?,
+        false => dir.to_path_buf(),
+    };
 
-    tmux::create(host, &name, dir)?;
+    tmux::create(host, &name, &dir)?;
     // Frecency is tracked against the project, so a worktree credits its parent.
     state::record(host, &project.path)?;
     tmux::attach(host, &name)
 }
 
-/// Offer the branch the session was just named for, cut in place in this
-/// checkout — or not at all, which still gets the session on the current
-/// branch. Ticket 10 adds the third option, a worktree.
+/// Offer the branch the session was just named for: a new worktree beside the
+/// checkout, in place in it, or neither. Returns the directory the work now
+/// lives in — the worktree, or the checkout for the other two.
 ///
-/// The fetch is opt-in, pre-answered from config, and never fatal: a remote
-/// that cannot be reached costs a warning and the local ref.
-fn cut_branch(
+/// The worktree leads because it alters no existing checkout and so is always
+/// safe; a dirty tree withholds the in-place option rather than offering one
+/// that would be refused.
+fn branch_for(
     host: &dyn Host,
     config: &Config,
-    dir: &Path,
+    main: &Path,
     name: &str,
     default: &str,
-) -> Result<()> {
-    if git::is_dirty(host, dir)? {
+) -> Result<PathBuf> {
+    let worktree = naming::worktree_dir(main, &config.username, name);
+    let dirty = git::is_dirty(host, main)?;
+    if dirty {
         println!(
-            "uncommitted changes in {}, staying on {default}",
-            dir.display()
+            "uncommitted changes in {}, so branching in place is not offered",
+            main.display()
         );
-        return Ok(());
-    }
-    if !host.confirm(&format!("Create branch {name}?"), true)? {
-        return Ok(());
     }
 
-    // Cutting from `origin/<default>` rather than fast-forwarding the local
-    // ref: nothing existing is touched, so divergence cannot fail the cut.
-    let mut base = default.to_string();
-    if host.confirm("Fetch origin first?", config.fetch_before_branch)? {
-        let out = git::fetch(host, dir)?;
-        match out.succeeded() {
-            true => base = format!("origin/{default}"),
-            false => println!(
+    let mut options = vec![format!("New worktree at {}", worktree.display())];
+    if !dirty {
+        options.push(format!("Branch in place in {}", main.display()));
+    }
+    options.push(format!("Neither, stay on {default}"));
+
+    let choice = host.select(&format!("Create branch {name}?"), &options)?;
+    if choice + 1 == options.len() {
+        return Ok(main.to_path_buf());
+    }
+
+    // An existing worktree on this branch is the same work, so it is joined
+    // rather than recreated — and no branch is cut, so nothing is fetched.
+    if choice == 0 && host.exists(&worktree) {
+        return reuse(host, main, &worktree, name);
+    }
+
+    let base = base_ref(host, config, main, default)?;
+    match choice {
+        0 => git::add_worktree(host, main, &worktree, name, &base).map(|()| worktree),
+        _ => git::create_branch(host, main, name, &base).map(|()| main.to_path_buf()),
+    }
+}
+
+/// The ref a new branch is cut from: `origin/<default>` when the offered fetch
+/// is accepted and succeeds, the local default branch otherwise.
+///
+/// Cutting from the remote ref rather than fast-forwarding the local one means
+/// nothing existing is touched, so divergence cannot fail the cut. The fetch is
+/// opt-in, pre-answered from config, and never fatal: a remote that cannot be
+/// reached costs a warning and the local ref.
+fn base_ref(host: &dyn Host, config: &Config, dir: &Path, default: &str) -> Result<String> {
+    if !host.confirm("Fetch origin first?", config.fetch_before_branch)? {
+        return Ok(default.to_string());
+    }
+    let out = git::fetch(host, dir)?;
+    Ok(match out.succeeded() {
+        true => format!("origin/{default}"),
+        false => {
+            println!(
                 "fetch failed ({}), branching from local {default}",
                 out.stderr.trim()
-            ),
+            );
+            default.to_string()
         }
+    })
+}
+
+/// A directory already sitting where the worktree would go: this repository's
+/// worktree on this branch is reused, anything else stops the work.
+/// Vibestation never writes into a directory it did not create.
+fn reuse(host: &dyn Host, main: &Path, path: &Path, name: &str) -> Result<PathBuf> {
+    let listed = group::worktrees(host, main)?;
+    match listed
+        .iter()
+        .any(|worktree| worktree.path == path && worktree.branch == name)
+    {
+        true => Ok(path.to_path_buf()),
+        false => Err(anyhow!(
+            "{} already exists and is not a worktree on {name}",
+            path.display()
+        )),
     }
-    git::create_branch(host, dir, name, &base)
 }
 
 /// What to name work by when it has a branch — or, for a detached worktree and

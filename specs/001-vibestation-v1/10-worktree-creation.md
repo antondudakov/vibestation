@@ -15,13 +15,13 @@ vibestation never writes into a directory it did not create.
 
 **Blocked by:** 09.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The strategy choice is three-way, with the new worktree pre-selected as the default
-- [ ] With a dirty checkout the in-place option is withheld while the worktree option remains available
-- [ ] The worktree directory name is the main checkout's directory name joined to the branch with the `username/` prefix stripped and remaining slashes replaced by hyphens
-- [ ] Worktree creation and branch creation are a single git operation, emitted with the expected branch, derived sibling path and base ref
-- [ ] A worktree that already exists for that branch at that path is reused, with no add emitted
-- [ ] A path occupied by anything else stops the operation with a message naming the path, emitting no add and creating no session
-- [ ] A session is created rooted in the directory the work now lives in — the new or reused worktree, or the main checkout for in-place and neither
-- [ ] No strategy prompt appears on the resume path
+- [x] The strategy choice is three-way, with the new worktree pre-selected as the default
+- [x] With a dirty checkout the in-place option is withheld while the worktree option remains available
+- [x] The worktree directory name is the main checkout's directory name joined to the branch with the `username/` prefix stripped and remaining slashes replaced by hyphens
+- [x] Worktree creation and branch creation are a single git operation, emitted with the expected branch, derived sibling path and base ref
+- [x] A worktree that already exists for that branch at that path is reused, with no add emitted
+- [x] A path occupied by anything else stops the operation with a message naming the path, emitting no add and creating no session
+- [x] A session is created rooted in the directory the work now lives in — the new or reused worktree, or the main checkout for in-place and neither
+- [x] No strategy prompt appears on the resume path

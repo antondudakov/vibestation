@@ -1,6 +1,8 @@
 //! Turning what the developer says into a name they will recognise later:
 //! `VBSN-1 initialize the project` becomes `ada/VBSN-1-initialize-the-project`.
 
+use std::path::{Path, PathBuf};
+
 /// The name for work that already has a branch: `username/<branch>`, without a
 /// second prefix when the branch already carries one — branches this tool cuts
 /// are `ada/VBSN-1-init` already.
@@ -27,6 +29,22 @@ pub fn suggest(username: &str, said: &str) -> String {
         true => sanitize(username),
         false => from_branch(username, &branch),
     }
+}
+
+/// Where a worktree for `branch` lands: a sibling of the main checkout, named
+/// for it and the branch with the `username/` prefix stripped and any
+/// remaining slashes hyphenated — `vibestation` and `ada/VBSN-1-init` give
+/// `vibestation-VBSN-1-init`. Identifiable from a shell prompt, and an
+/// ordinary directory to every other tool.
+pub fn worktree_dir(main: &Path, username: &str, branch: &str) -> PathBuf {
+    let stripped = match username.is_empty() {
+        true => branch,
+        false => branch
+            .strip_prefix(&format!("{username}/"))
+            .unwrap_or(branch),
+    };
+    let project = main.file_name().unwrap_or_default().to_string_lossy();
+    main.with_file_name(format!("{project}-{}", stripped.replace('/', "-")))
 }
 
 /// tmux forbids `.` and `:` in session names. Slashes it permits, and they

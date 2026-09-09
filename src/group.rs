@@ -80,7 +80,7 @@ fn anchor(repo: &Path, dir: &str) -> PathBuf {
 /// reached, deliberately a superset of what was found on disk. The main
 /// checkout leads that list and is not a worktree of itself, and an entry
 /// whose directory is gone is dropped rather than shown as a broken row.
-fn worktrees(host: &dyn Host, main: &Path) -> Result<Vec<Worktree>> {
+pub fn worktrees(host: &dyn Host, main: &Path) -> Result<Vec<Worktree>> {
     let out = host.run(&["git", "worktree", "list", "--porcelain"], Some(main))?;
 
     let mut listed: Vec<Worktree> = Vec::new();

@@ -68,3 +68,34 @@ pub fn create_branch(host: &dyn Host, path: &Path, name: &str, base: &str) -> Re
         )),
     }
 }
+
+/// Cut `name` from `base` into a new worktree at `path`, in one operation —
+/// `git worktree add` creates the branch and the directory together.
+pub fn add_worktree(
+    host: &dyn Host,
+    main: &Path,
+    path: &Path,
+    name: &str,
+    base: &str,
+) -> Result<()> {
+    let out = host.run(
+        &[
+            "git",
+            "worktree",
+            "add",
+            "-b",
+            name,
+            &path.to_string_lossy(),
+            base,
+        ],
+        Some(main),
+    )?;
+    match out.succeeded() {
+        true => Ok(()),
+        false => Err(anyhow!(
+            "git would not add worktree {}: {}",
+            path.display(),
+            out.stderr.trim()
+        )),
+    }
+}
