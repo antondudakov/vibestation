@@ -27,10 +27,13 @@ Rust toolchain. `vibestation-macos` is a universal binary for Intel and Apple
 Silicon; `vibestation-x86_64-linux` is statically linked against musl and runs
 on any x86_64 Linux whatever its glibc.
 
-On a Mac, install or update with [`scripts/install-macos.sh`](scripts/install-macos.sh),
-run from a clone. It pulls, installs into `~/.local/bin` and ad-hoc signs the
-binary — the macOS build is cross-compiled on Linux, so it arrives unsigned and
-Apple Silicon will not run it otherwise.
+Install or update from a clone with
+[`scripts/install-linux.sh`](scripts/install-linux.sh) or
+[`scripts/install-macos.sh`](scripts/install-macos.sh). Both pull, then install
+into `~/.local/bin` (override with `BIN_DIR=`); pass `--no-pull` to install what
+the working tree already has. The macOS one also ad-hoc signs the binary — that
+build is cross-compiled on Linux, so it arrives unsigned and Apple Silicon will
+not run it otherwise.
 
 Rebuild both with one command, then commit `dist/` to ship:
 
