@@ -10,6 +10,8 @@ worked example of the new list at a realistic width.
 
 **Blocked by:** 03
 
-- [ ] The prompt carries both counts, singularised at one
-- [ ] With no live sessions the running half is omitted
-- [ ] The README describes the rows the tool now draws
+**Status:** done
+
+- [x] The prompt carries both counts, singularised at one
+- [x] With no live sessions the running half is omitted
+- [x] The README describes the rows the tool now draws

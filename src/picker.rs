@@ -128,6 +128,24 @@ pub fn rows(
     render(table, width.saturating_sub(PREFIX))
 }
 
+/// The prompt line, which is the one line inquire never scrolls away — so it
+/// is where what the list is made of belongs. Worktrees credit their project,
+/// as they do everywhere else, and a project showing as its own live session
+/// is counted as the session it is.
+pub fn title(rows: &[(Row, String)]) -> String {
+    let count = |kind: fn(&Row) -> bool| rows.iter().filter(|(row, _)| kind(row)).count();
+    let running = count(|row| matches!(row, Row::Session(_)));
+    let projects = count(|row| matches!(row, Row::Project(_)));
+    let listed = match projects {
+        1 => "1 project".to_string(),
+        _ => format!("{projects} projects"),
+    };
+    match running {
+        0 => format!("Open  {listed}"),
+        _ => format!("Open  {running} running · {listed}"),
+    }
+}
+
 fn cells(fields: &[&str; COLUMNS]) -> Cells {
     (*fields).map(str::to_string)
 }

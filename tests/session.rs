@@ -90,7 +90,7 @@ fn a_checkout_on_the_default_branch_asks_once_and_offers_the_name() {
     assert_eq!(
         host.prompts(),
         [
-            "Open",
+            "Open  2 projects",
             "What are you working on? []",
             "Session name [ada/VBSN-4-picker-rows]",
             "Create branch ada/VBSN-4-picker-rows?",
@@ -139,7 +139,11 @@ fn a_checkout_already_on_a_feature_branch_asks_nothing() {
 
     vibestation::run(&host).unwrap();
 
-    assert_eq!(host.prompts(), ["Open"], "resuming asks nothing");
+    assert_eq!(
+        host.prompts(),
+        ["Open  2 projects"],
+        "resuming asks nothing"
+    );
     assert_eq!(
         created(&host),
         ["tmux new-session -d -s ada/notes-tidy -c /home/dev/code/notes"],
@@ -162,7 +166,7 @@ fn selecting_a_worktree_creates_a_session_in_it_with_no_prompts() {
 
     vibestation::run(&host).unwrap();
 
-    assert_eq!(host.prompts(), ["Open"]);
+    assert_eq!(host.prompts(), ["Open  2 projects"]);
     assert_eq!(
         created(&host),
         ["tmux new-session -d -s ada/VBSN-1-init -c /home/dev/code/api-VBSN-1"],

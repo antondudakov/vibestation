@@ -42,7 +42,7 @@ pub fn run(host: &dyn Host) -> Result<()> {
         );
         let labels: Vec<String> = rows.iter().map(|(_, label)| label.clone()).collect();
 
-        match rows[host.select("Open", &labels)?].0 {
+        match rows[host.select(&picker::title(&rows), &labels)?].0 {
             Row::Session(index) => return tmux::attach(host, &sessions[index].name),
             // Decoration: choosing it costs nothing and reopens the list.
             Row::Separator => continue,

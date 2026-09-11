@@ -107,7 +107,11 @@ fn choosing_a_session_outside_tmux_attaches_to_it() {
 
     vibestation::run(&host).unwrap();
 
-    assert_eq!(host.prompts(), ["Open"]);
+    assert_eq!(
+        host.prompts(),
+        ["Open  2 running · 2 projects"],
+        "the prompt line never scrolls, so it carries what the list is made of"
+    );
     assert_eq!(
         host.log().last().unwrap(),
         "tmux attach-session -t notes-scratch",
@@ -141,7 +145,10 @@ fn the_separator_reopens_the_picker_and_an_abort_leaves_it() {
 
     assert_eq!(
         separator.prompts(),
-        ["Open", "Open"],
+        [
+            "Open  2 running · 2 projects",
+            "Open  2 running · 2 projects"
+        ],
         "choosing decoration costs nothing: the same picker comes back"
     );
 
@@ -361,4 +368,35 @@ fn the_session_you_are_in_leads_the_list_and_says_how_long_it_has_been() {
         rows[1].starts_with('●'),
         "and the one someone left attached elsewhere: {rows:?}"
     );
+}
+
+#[test]
+fn the_prompt_line_counts_what_the_list_is_made_of() {
+    let sessions = host().answer(Answer::Abort);
+    let cold = host()
+        .fails(LIST, 1, "no server running on /tmp/tmux-1000/default")
+        .answer(Answer::Abort);
+    let one = FakeHost::new()
+        .file(
+            CONFIG,
+            "projects_dirs = [\"/home/dev/code\"]\nusername = \"ada\"\n",
+        )
+        .file(
+            CACHE,
+            r#"[{"name": "api", "path": "/home/dev/code/api", "worktrees": []}]"#,
+        )
+        .fails(LIST, 1, "no server running")
+        .answer(Answer::Abort);
+
+    for host in [&sessions, &cold, &one] {
+        vibestation::run(host).unwrap_err();
+    }
+
+    assert_eq!(sessions.prompts(), ["Open  2 running · 2 projects"]);
+    assert_eq!(
+        cold.prompts(),
+        ["Open  3 projects"],
+        "with nothing running the half that would say so is left out"
+    );
+    assert_eq!(one.prompts(), ["Open  1 project"], "singular at one");
 }

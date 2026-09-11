@@ -4,14 +4,16 @@ One command, one fuzzy picker: your live tmux sessions on top, your git
 projects below, and a session waiting at the end of either.
 
 ```
-ada/VBSN-4-picker  ~/code/vibestation  ada/VBSN-4-picker  nvim
-notes-scratch      /etc  zsh  (attached)
-────────────────────────
-api    ~/code/api
-  └ api-VBSN-7-retries  ada/VBSN-7-retries
-notes  ~/notes
+? Open  2 running · 2 projects
+▶  ada/VBSN-4-picker   ~/code/vibestation  VBSN-4-picker   nvim  2m
+●  notes-scratch       /etc                                zsh   1h
+───────────────────────────────────────────────────────────────────
+   api                 ~/code/api
+└  api-VBSN-7-retries                      VBSN-7-retries
+   notes               ~/notes
 ↻  refresh the project list
-+  add a project by path
+✚  add a project by path
+[↑↓ move · type to filter · enter select · esc cancel]
 ```
 
 Pick a session and you are in it. Pick a project and vibestation names the
@@ -46,18 +48,41 @@ First run asks one question — where your projects live — and writes
 
 ## The picker
 
-One picker, always. Live tmux sessions first, each with its directory, the
-branch checked out there, what is running in the active pane, and whether a
-client is already attached. Then a separator, then your git projects ranked by
-how often and how recently you open them, each with its worktrees indented
-beneath it. Typing filters every row at once, so a ticket identifier reaches
-its worktree directly.
+One picker, always, as tall as your terminal. Live tmux sessions first, each
+with its directory, the branch checked out there, what is running in the active
+pane, and how long since a client last had it — most recently left first, so
+the session you want is usually the first row. Then a separator, then your git
+projects ranked by how often and how recently you open them, each with its
+worktrees beneath it. Typing filters every row at once, so a ticket identifier
+reaches its worktree directly.
+
+Every row is laid out in the same columns, padded to the widths of the whole
+list, so sessions, projects and worktrees read as one grid rather than three.
+The grid is fitted to your terminal rather than wrapped: a path gives up its
+front — `~/…/android-monorepo-3` — and on a narrow terminal the columns
+disappear in the order you would have deleted them yourself, the command first.
+
+The glyph at the front says what a row is, which is what keeps a scrolled list
+readable:
+
+| glyph | the row is |
+|---|---|
+| `▶` | the session you are in |
+| `●` | a session attached somewhere else |
+| `○` | a session running with nobody in it |
+| _blank_ | a project |
+| `└` | one of that project's worktrees |
+
+Your own username is stripped from every branch shown, since it is on all of
+them. The prompt line above the list — the one line that never scrolls — says
+how much of the list is running work.
 
 A project that already has a session appears only as that session — the same
 work is never listed twice.
 
 Choosing a session joins it: `switch-client` when you are already inside tmux,
-`attach-session` when you are not. Esc costs nothing and emits nothing.
+`attach-session` when you are not. Esc costs nothing and emits nothing, and so
+does the separator — choosing decoration just reopens the list.
 
 The last two rows are the escape hatches. **Refresh** rescans your projects
 directories and rewrites the cache, which is how a repository you just cloned
