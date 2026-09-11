@@ -3,7 +3,7 @@
 //! answers, run the application, then assert on the command log and the file
 //! writes. Those two are the tool's entire observable effect on the world.
 
-use crate::host::{Aborted, Host, Output};
+use crate::host::{Aborted, Host, Output, FALLBACK_TERMINAL};
 use anyhow::Result;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -35,6 +35,7 @@ pub struct FakeHost {
     now: SystemTime,
     home: PathBuf,
     in_tmux: bool,
+    terminal: (usize, usize),
     log: RefCell<Vec<String>>,
     writes: RefCell<Vec<(PathBuf, String)>>,
     prompts: RefCell<Vec<String>>,
@@ -56,6 +57,7 @@ impl FakeHost {
             now: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
             home: PathBuf::from("/home/dev"),
             in_tmux: false,
+            terminal: FALLBACK_TERMINAL,
             log: RefCell::new(Vec::new()),
             writes: RefCell::new(Vec::new()),
             prompts: RefCell::new(Vec::new()),
@@ -112,6 +114,13 @@ impl FakeHost {
 
     pub fn in_tmux(mut self, in_tmux: bool) -> Self {
         self.in_tmux = in_tmux;
+        self
+    }
+
+    /// The terminal the rows are laid out against, `80×24` until a test
+    /// says otherwise.
+    pub fn terminal(mut self, width: usize, height: usize) -> Self {
+        self.terminal = (width, height);
         self
     }
 
@@ -225,6 +234,10 @@ impl Host for FakeHost {
         // the test see that it was the last thing emitted.
         self.log.borrow_mut().push(FakeHost::key(argv, None));
         Ok(())
+    }
+
+    fn terminal(&self) -> (usize, usize) {
+        self.terminal
     }
 
     fn select(&self, message: &str, options: &[String]) -> Result<usize> {

@@ -89,6 +89,11 @@ pub trait Host {
     /// an attach without the real terminal behind it is not an attach.
     fn exec(&self, argv: &[&str]) -> Result<()>;
 
+    /// The terminal's width and height in cells: what a row is laid out
+    /// against, and what decides how many rows the picker may show. A terminal
+    /// that will not answer is [`FALLBACK_TERMINAL`].
+    fn terminal(&self) -> (usize, usize);
+
     /// Choose one of `options`, returning its index. Typing filters the list.
     fn select(&self, message: &str, options: &[String]) -> Result<usize>;
 
@@ -170,11 +175,23 @@ impl Host for RealHost {
             .with_context(|| format!("running `{}`", argv.join(" ")))
     }
 
+    fn terminal(&self) -> (usize, usize) {
+        crossterm::terminal::size()
+            .map(|(width, height)| (width as usize, height as usize))
+            .unwrap_or(FALLBACK_TERMINAL)
+    }
+
     fn select(&self, message: &str, options: &[String]) -> Result<usize> {
         // inquire's default scorer is a skim fuzzy match, so `vbsn3` finds
         // `ada/VBSN-3-tmux` and no external `fzf` is needed.
-        prompt(inquire::Select::new(message, options.to_vec()).raw_prompt())
-            .map(|choice| choice.index)
+        prompt(
+            inquire::Select::new(message, options.to_vec())
+                .with_page_size(page_size(self.terminal().1))
+                .with_help_message(HELP)
+                .with_render_config(render_config())
+                .raw_prompt(),
+        )
+        .map(|choice| choice.index)
     }
 
     fn input(&self, message: &str, default: &str) -> Result<String> {
@@ -209,6 +226,29 @@ impl Host for RealHost {
     }
 }
 
+/// What a terminal that will not answer is taken to be. Eighty by
+/// twenty-four is the oldest safe answer and the one every pipe deserves.
+pub const FALLBACK_TERMINAL: (usize, usize) = (80, 24);
+
+/// One line, under every prompt, saying what the keys do.
+const HELP: &str = "↑↓ move · type to filter · enter select · esc cancel";
+
+/// How many rows the picker may show: the terminal less the prompt line, the
+/// help line and two rows of margin, so opening the list never scrolls the
+/// prompt off its own screen. Floored at five — a very short terminal still
+/// needs enough rows to be a list.
+fn page_size(height: usize) -> usize {
+    height.saturating_sub(4).max(5)
+}
+
+/// The default configuration — which honours `NO_COLOR` — with a sharper
+/// cursor: `❯` reads as a cursor at a glance where `>` reads as text.
+fn render_config() -> inquire::ui::RenderConfig<'static> {
+    use inquire::ui::{Color, RenderConfig, Styled};
+    RenderConfig::default()
+        .with_highlighted_option_prefix(Styled::new("❯").with_fg(Color::LightCyan))
+}
+
 /// inquire reports Esc and Ctrl-C as errors; here they are an abort.
 fn prompt<T>(result: inquire::error::InquireResult<T>) -> Result<T> {
     use inquire::InquireError::{OperationCanceled, OperationInterrupted};
@@ -221,6 +261,31 @@ fn prompt<T>(result: inquire::error::InquireResult<T>) -> Result<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_page_fills_the_terminal_but_never_overruns_it() {
+        assert_eq!(page_size(50), 46, "a tall terminal shows 46 rows, not 7");
+        assert_eq!(page_size(24), 20);
+        assert_eq!(
+            page_size(8),
+            5,
+            "floored, so a short terminal is still a list"
+        );
+        assert_eq!(
+            page_size(0),
+            5,
+            "a terminal with no height does not underflow"
+        );
+    }
+
+    #[test]
+    fn a_terminal_that_will_not_answer_is_eighty_by_twenty_four() {
+        let (width, height) = RealHost.terminal();
+
+        assert!(width > 0 && height > 0, "{width}x{height}");
+        // Tests run without a controlling terminal, so this is the fallback.
+        assert_eq!((width, height), FALLBACK_TERMINAL);
+    }
 
     /// A throwaway directory tree: `root/a/b/c`, plus a symlink `root/link`
     /// pointing back at `root/a`.

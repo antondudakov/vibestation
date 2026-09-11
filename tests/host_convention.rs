@@ -120,6 +120,17 @@ fn an_existing_config_skips_the_first_run_prompt() {
 }
 
 #[test]
+fn the_terminal_is_eighty_by_twenty_four_until_a_test_says_otherwise() {
+    // Through the trait: the builder of the same name is the inherent method,
+    // which is the convention every other scripted value here follows.
+    assert_eq!(Host::terminal(&FakeHost::new()), (80, 24));
+    assert_eq!(
+        Host::terminal(&FakeHost::new().terminal(120, 50)),
+        (120, 50)
+    );
+}
+
+#[test]
 fn declining_the_confirmation_emits_no_tmux_command() {
     let host = host()
         .file("/home/dev/.vibestation/config.toml", "/home/dev/code\n")
