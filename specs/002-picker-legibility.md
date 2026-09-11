@@ -171,9 +171,14 @@ segments where it can — `~/…/android-monorepo-3` — because the end of a pa
 what identifies it.
 
 **Shrink, until it fits.** While the padded row still exceeds the budget, in
-order: elide dir harder (last two segments, then one), drop the command column,
-drop the age column, truncate branch, truncate name. A priority list, not a
-layout engine.
+order: elide dir down to a comfortable eighteen cells, drop the command column,
+drop the age column, elide dir the rest of the way to eight, truncate branch,
+truncate name. A priority list, not a layout engine.
+
+The dir shave is in two stages because one was wrong: shaving it to its floor
+first ate the whole overrun and destroyed the path while the command — the
+least load-bearing column there is — sat untouched. Below eighteen cells a path
+has stopped being a path, and the command goes before that happens.
 
 ### Glyphs
 
@@ -200,8 +205,10 @@ The select message becomes `Open  4 running · 26 projects`, counting session ro
 and project rows — worktrees credit their project, as they do everywhere else.
 With no sessions it is `Open  26 projects`. Both halves are singularised at one.
 
-The help line is set globally once: `↑↓ move · type to filter · enter open · esc
-cancel`, with `❯` as the highlighted-option prefix. Those are the only styling
+The help line is set on every select: `↑↓ move · type to filter · enter select ·
+esc cancel`, with `❯` as the highlighted-option prefix. "Select" rather than
+"open", because the same seam draws the branch-strategy prompt, where opening
+is not what enter does. Those are the only styling
 changes, and they are uniform across every prompt the tool shows.
 
 ### The separator
