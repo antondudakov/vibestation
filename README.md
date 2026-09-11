@@ -15,6 +15,22 @@ see
 and [`specs/001-vibestation-v1/README.md`](specs/001-vibestation-v1/README.md)
 for the tickets that get it there.
 
+## Install
+
+macOS, via the tap:
+
+```sh
+brew install antondudakov/vibestation/vibestation
+```
+
+Linux — the release carries a static binary that runs on any x86_64 Linux:
+
+```sh
+curl -fsSLo ~/.local/bin/vibestation \
+  https://github.com/antondudakov/vibestation/releases/latest/download/vibestation-x86_64-linux
+chmod +x ~/.local/bin/vibestation
+```
+
 ## Build
 
 ```sh
@@ -63,8 +79,28 @@ alone, since it would otherwise add 4.3M of identical binaries to history.
 On a machine with no toolchain the commit still goes through with a warning.
 `git commit --no-verify` skips it once.
 
-This is a convenience for the pre-release tickets; ticket 12 replaces it with
-GitHub Releases and a Homebrew tap.
+`dist/` and these scripts are for trying unreleased work on another machine;
+released versions come from GitHub Releases and the tap instead.
+
+## Releasing
+
+A tag is the whole procedure:
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) creates the
+release, builds the Linux binary on Linux and the universal macOS binary on
+macOS — natively, so Apple's linker ad-hoc signs it — runs each one to check it
+reports the tagged version, attaches both, and points the formula in
+[`homebrew-vibestation`](https://github.com/antondudakov/homebrew-vibestation)
+at the new assets. The tag must match `version` in `Cargo.toml` or the build
+stops, since the binary takes its version from there.
+
+That last step needs a `TAP_TOKEN` repository secret — a personal access token
+with `repo` scope — because a workflow's own token cannot write to another
+repository.
 
 ## Development
 

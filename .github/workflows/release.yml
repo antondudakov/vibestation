@@ -1,0 +1,118 @@
+name: Release
+
+# A tag is the whole release procedure: push `v0.1.0` and the binaries are
+# built from that tag, checked, and attached to the GitHub release. Nothing
+# between the tag and an installable binary is done by hand.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The release is created once, up front, so that the two build jobs have
+  # something to upload to and cannot race each other creating it.
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+
+  build:
+    needs: release
+    strategy:
+      matrix:
+        include:
+          # Static musl, so it runs on any x86_64 Linux whatever its glibc.
+          - os: ubuntu-latest
+            asset: vibestation-x86_64-linux
+            targets: x86_64-unknown-linux-musl
+          # Built on macOS rather than cross-compiled: Apple's linker ad-hoc
+          # signs what it produces, and Apple Silicon refuses to run a binary
+          # with no signature at all.
+          - os: macos-latest
+            asset: vibestation-macos
+            targets: x86_64-apple-darwin, aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      # The binary takes its version from Cargo.toml, so a tag that disagrees
+      # with it would ship a binary lying about which release it is.
+      - name: The tag agrees with Cargo.toml
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          grep -qx "version = \"$version\"" Cargo.toml ||
+            { echo "tag $GITHUB_REF_NAME is not version $version in Cargo.toml"; exit 1; }
+
+      - name: Build ${{ matrix.asset }}
+        run: |
+          targets='${{ matrix.targets }}'
+          built=()
+          for target in ${targets//,/ }; do
+            cargo build --release --target "$target"
+            built+=("target/$target/release/vibestation")
+          done
+          # One target is copied; two are joined into a universal binary.
+          if [ "${#built[@]}" -gt 1 ]; then
+            lipo -create -output "${{ matrix.asset }}" "${built[@]}"
+          else
+            cp "${built[0]}" "${{ matrix.asset }}"
+          fi
+
+      # Both runners can execute what they just built, so the binary that gets
+      # attached is one that has been run at least once.
+      - name: It runs and reports the tagged version
+        run: |
+          printed="$(./${{ matrix.asset }} --version)"
+          [ "$printed" = "vibestation ${GITHUB_REF_NAME#v}" ] ||
+            { echo "--version said '$printed'"; exit 1; }
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" "${{ matrix.asset }}" --clobber
+
+  # The tap is a separate repository because Homebrew requires the name
+  # `homebrew-<tap>`; this points its formula at the asset just attached, so
+  # `brew install antondudakov/vibestation/vibestation` installs this release.
+  #
+  # TAP_TOKEN is a personal access token with `repo` scope: the workflow's own
+  # token is scoped to this repository and cannot write to another one.
+  tap:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Point the formula at this release
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          url="https://github.com/${{ github.repository }}/releases/download/$GITHUB_REF_NAME/vibestation-macos"
+          sha="$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)"
+
+          owner="${{ github.repository_owner }}"
+          git clone --depth 1 -q \
+            "https://x-access-token:$TAP_TOKEN@github.com/$owner/homebrew-vibestation" tap
+          cd tap
+          sed -i \
+            -e "s|^  url .*|  url \"$url\"|" \
+            -e "s|^  sha256 .*|  sha256 \"$sha\"|" \
+            -e "s|^  version .*|  version \"$version\"|" \
+            Formula/vibestation.rb
+
+          git diff --quiet && { echo "the formula already points at $version"; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "vibestation $version"
+          git push -q
