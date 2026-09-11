@@ -31,13 +31,21 @@ pub fn run(host: &dyn Host) -> Result<()> {
     let home = host.home()?;
 
     loop {
-        let projects = state::rank(found, &opens, host.now());
-        let rows = picker::rows(&sessions, &projects, &home);
+        // Cloned because the separator reopens the picker over the same list.
+        let projects = state::rank(found.clone(), &opens, host.now());
+        let rows = picker::rows(
+            &sessions,
+            &projects,
+            &home,
+            &config.username,
+            host.terminal().0,
+        );
         let labels: Vec<String> = rows.iter().map(|(_, label)| label.clone()).collect();
 
         match rows[host.select("Open", &labels)?].0 {
             Row::Session(index) => return tmux::attach(host, &sessions[index].name),
-            Row::Separator => return Ok(()),
+            // Decoration: choosing it costs nothing and reopens the list.
+            Row::Separator => continue,
             Row::Project(index) => return open(host, &config, &projects[index], None),
             Row::Worktree(index, child) => {
                 return open(host, &config, &projects[index], Some(child))

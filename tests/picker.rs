@@ -1,5 +1,6 @@
-//! The one picker end to end: what the rows say, what a choice emits, and the
-//! two ways of joining a session.
+//! The one picker end to end: what the rows say, how they line up, how they
+//! fit the terminal, what a choice emits, and the two ways of joining a
+//! session.
 
 use vibestation::fake::{Answer, FakeHost};
 use vibestation::host::aborted;
@@ -60,19 +61,20 @@ fn sessions_come_first_then_projects_with_their_worktrees_beneath() {
     assert_eq!(
         rows(&host),
         [
-            "ada/VBSN-4-picker  ~/code/vibestation  ada/VBSN-4-picker  nvim",
-            "notes-scratch      /etc  zsh  (attached)",
-            "────────────────────────",
-            "  └ vibestation-VBSN-1  ada/VBSN-1-init",
-            "  └ vibestation-VBSN-9  ada/VBSN-9-fix",
-            "api    ~/code/api",
-            "notes  ~/notes",
+            "○  ada/VBSN-4-picker   ~/code/vibestation  VBSN-4-picker  nvim",
+            "●  notes-scratch       /etc                               zsh",
+            "──────────────────────────────────────────────────────────────",
+            "└  vibestation-VBSN-1                      VBSN-1-init",
+            "└  vibestation-VBSN-9                      VBSN-9-fix",
+            "   api                 ~/code/api",
+            "   notes               ~/notes",
             "↻  refresh the project list",
-            "+  add a project by path",
+            "✚  add a project by path",
         ],
         "the project that already has a session is not listed twice, its \
          worktrees still stand where it would have been, each worktree row \
-         carries its branch, and the two actions come last"
+         carries its branch in the same column as the sessions above, and the \
+         two actions come last"
     );
 }
 
@@ -87,9 +89,12 @@ fn projects_are_ranked_by_frecency() {
 
     let rows = rows(&host);
 
-    assert!(rows[3].starts_with("notes"), "rows were {rows:?}");
     assert!(
-        rows[rows.len() - 3].starts_with("api"),
+        rows[3].trim_start().starts_with("notes"),
+        "rows were {rows:?}"
+    );
+    assert!(
+        rows[rows.len() - 3].trim_start().starts_with("api"),
         "the never-opened projects keep their scan order behind it, above the \
          two action rows: {rows:?}"
     );
@@ -123,12 +128,18 @@ fn choosing_a_session_inside_tmux_switches_the_client_instead() {
 }
 
 #[test]
-fn the_separator_and_an_abort_both_emit_nothing() {
-    let separator = host().answer(Answer::Select(2));
+fn the_separator_reopens_the_picker_and_an_abort_leaves_it() {
+    let separator = host().answers([Answer::Select(2), Answer::Abort]);
     let abort = host().answer(Answer::Abort);
 
-    vibestation::run(&separator).unwrap();
+    vibestation::run(&separator).unwrap_err();
     let error = vibestation::run(&abort).unwrap_err();
+
+    assert_eq!(
+        separator.prompts(),
+        ["Open", "Open"],
+        "choosing decoration costs nothing: the same picker comes back"
+    );
 
     assert!(
         aborted(&error),
@@ -155,15 +166,168 @@ fn no_tmux_server_leaves_a_picker_of_projects_alone() {
     assert_eq!(
         rows(&host),
         [
-            "vibestation  ~/code/vibestation",
-            "  └ vibestation-VBSN-1  ada/VBSN-1-init",
-            "  └ vibestation-VBSN-9  ada/VBSN-9-fix",
-            "api          ~/code/api",
-            "notes        ~/notes",
+            "   vibestation         ~/code/vibestation",
+            "└  vibestation-VBSN-1                      VBSN-1-init",
+            "└  vibestation-VBSN-9                      VBSN-9-fix",
+            "   api                 ~/code/api",
+            "   notes               ~/notes",
             "↻  refresh the project list",
-            "+  add a project by path",
+            "✚  add a project by path",
         ],
         "a cold start opens the picker rather than erroring, and with no \
          sessions above there is no separator"
+    );
+}
+
+/// Where `needle` starts, counted in cells: a glyph is one column and three
+/// bytes, so byte offsets do not compare across rows.
+fn column(row: &str, needle: &str) -> usize {
+    row[..row.find(needle).expect(needle)].chars().count()
+}
+
+#[test]
+fn columns_line_up_across_sessions_projects_and_worktrees() {
+    let host = host().answer(Answer::Abort);
+
+    let rows = rows(&host);
+
+    assert_eq!(
+        column(&rows[0], "~/code/vibestation"),
+        column(&rows[5], "~/code/api"),
+        "a session's directory and a project's start in the same column: {rows:?}"
+    );
+    assert_eq!(
+        column(&rows[0], "VBSN-4-picker  nvim"),
+        column(&rows[3], "VBSN-1-init"),
+        "and so do a session's branch and a worktree's: {rows:?}"
+    );
+    assert_eq!(
+        rows[2].chars().count(),
+        rows[0].chars().count().max(rows[3].chars().count()),
+        "the separator spans the grid it separates: {rows:?}"
+    );
+}
+
+/// Everything long at once: a deep path, an owner-prefixed branch, a command,
+/// and a session name past its share of the width. This is the row that used
+/// to wrap into two.
+fn long() -> FakeHost {
+    FakeHost::new()
+        .file(
+            CONFIG,
+            "projects_dirs = [\"/home/dev/projects\"]\nusername = \"antondudakov\"\n",
+        )
+        .file(
+            CACHE,
+            r#"[{"name": "android-monorepo-3",
+                 "path": "/home/dev/projects/sports/android-monorepo-3",
+                 "worktrees": []}]"#,
+        )
+        .succeeds(
+            LIST,
+            "0\t/home/dev/projects/sports/android-monorepo-3\tclaude\tandroid3 | Ana input everywhere\n",
+        )
+        .succeeds(
+            "/home/dev/projects/sports/android-monorepo-3 $ git rev-parse --abbrev-ref HEAD",
+            "antondudakov/ana_input_everywhere\n",
+        )
+}
+
+#[test]
+fn a_row_that_used_to_wrap_now_fits_the_terminal() {
+    let host = long().answer(Answer::Abort);
+
+    let rows = rows(&host);
+
+    for row in &rows {
+        assert!(
+            row.chars().count() <= 78,
+            "80 columns less the two inquire writes before every option: {row:?}"
+        );
+    }
+    assert_eq!(rows[0].chars().count(), 78, "and it uses what it is given");
+}
+
+#[test]
+fn a_narrow_terminal_gives_up_the_command_before_it_destroys_the_path() {
+    let host = long().terminal(60, 24).answer(Answer::Abort);
+
+    let rows = rows(&host);
+
+    for row in &rows {
+        assert!(row.chars().count() <= 58, "{row:?}");
+    }
+    assert!(
+        !rows[0].contains("claude"),
+        "the command goes before the branch or the name: {rows:?}"
+    );
+}
+
+#[test]
+fn your_own_prefix_comes_off_a_branch_and_another_owners_stays() {
+    let host = host()
+        .succeeds(
+            LIST,
+            "0\t/home/dev/code/vibestation\tnvim\tmine\n1\t/home/dev/notes\tzsh\ttheirs\n",
+        )
+        .succeeds(
+            &format!("/home/dev/notes $ {BRANCH}"),
+            "grace/VBSN-2-review\n",
+        )
+        .answer(Answer::Abort);
+
+    let rows = rows(&host);
+
+    assert!(
+        rows[0].contains("VBSN-4-picker") && !rows[0].contains("ada/"),
+        "your own name on every row is your own name, repeated: {rows:?}"
+    );
+    assert!(
+        rows[1].contains("grace/VBSN-2-review"),
+        "someone else's prefix is information: {rows:?}"
+    );
+}
+
+#[test]
+fn the_glyph_says_what_each_row_is() {
+    let host = host().answer(Answer::Abort);
+
+    let glyphs: Vec<char> = rows(&host)
+        .iter()
+        .map(|row| row.chars().next().unwrap())
+        .collect();
+
+    assert_eq!(
+        glyphs,
+        ['○', '●', '─', '└', '└', ' ', ' ', '↻', '✚'],
+        "detached, attached elsewhere, the separator, two worktrees, two \
+         projects, and the two escape hatches — readable at any scroll position"
+    );
+}
+
+#[test]
+fn one_long_worktree_name_does_not_widen_the_name_column() {
+    let host = host()
+        .file(
+            CACHE,
+            r#"[{"name": "vibestation", "path": "/home/dev/code/vibestation",
+                 "worktrees": [
+                   {"path": "/home/dev/code/vibestation-VBSN-7-prod-error-rate-0c4faa-again",
+                    "branch": "ada/VBSN-7-prod"}
+                 ]},
+                {"name": "api", "path": "/home/dev/code/api", "worktrees": []}]"#,
+        )
+        .answer(Answer::Abort);
+
+    let rows = rows(&host);
+
+    assert!(
+        rows[3].contains('…'),
+        "the long name is the one that gives way: {rows:?}"
+    );
+    assert_eq!(
+        column(&rows[4], "~/code/api"),
+        column(&rows[0], "~/code/vibestation"),
+        "and the column it is in stays where it was: {rows:?}"
     );
 }

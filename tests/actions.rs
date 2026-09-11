@@ -49,7 +49,7 @@ fn the_two_actions_are_the_last_rows_of_the_picker() {
         [
             "api  ~/code/api",
             "↻  refresh the project list",
-            "+  add a project by path",
+            "✚  add a project by path",
         ]
     );
 }
@@ -64,7 +64,7 @@ fn refresh_rescans_the_roots_and_rewrites_the_cache() {
             "api    ~/code/api",
             "fresh  ~/code/fresh",
             "↻  refresh the project list",
-            "+  add a project by path",
+            "✚  add a project by path",
         ],
         "the picker reopens over what the rescan found"
     );
@@ -145,7 +145,7 @@ fn an_added_repository_lands_in_the_config_and_survives_a_refresh() {
             "fresh  ~/code/fresh",
             "tool   ~/vendor/tool",
             "↻  refresh the project list",
-            "+  add a project by path",
+            "✚  add a project by path",
         ],
         "the added project is still listed after the rescan"
     );

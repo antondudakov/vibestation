@@ -26,10 +26,12 @@ separator reopens the picker rather than exiting the tool silently.
 
 **Blocked by:** 01
 
-- [ ] Columns line up across sessions, projects and worktrees in one list
-- [ ] A long worktree name truncates rather than widening the name column
-- [ ] A 130-character session row fits in 78 cells at 80 columns, eliding the path from the left
-- [ ] At 60 columns the command and age columns are gone and the grid still lines up
-- [ ] The glyph distinguishes attached-elsewhere, detached, project, worktree and the two actions
-- [ ] `username/` is stripped from branch cells; another owner's prefix is left alone
-- [ ] The separator spans the fitted width, and choosing it reopens the picker and emits nothing
+**Status:** done
+
+- [x] Columns line up across sessions, projects and worktrees in one list
+- [x] A long worktree name truncates rather than widening the name column
+- [x] A 130-character session row fits in 78 cells at 80 columns, eliding the path from the left
+- [x] At 60 columns the command and age columns are gone and the grid still lines up
+- [x] The glyph distinguishes attached-elsewhere, detached, project, worktree and the two actions
+- [x] `username/` is stripped from branch cells; another owner's prefix is left alone
+- [x] The separator spans the fitted width, and choosing it reopens the picker and emits nothing
