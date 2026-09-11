@@ -1,6 +1,7 @@
 //! The one picker: live sessions, a separator, then projects ranked by
-//! frecency with their worktrees as indented children. Every row is one line
-//! of text, so tmux sessions, projects and worktrees are all reachable by the
+//! frecency with their worktrees as indented children, and last the refresh
+//! and add-manually actions. Every row is one line of text, so tmux sessions,
+//! projects, worktrees and the two escape hatches are all reachable by the
 //! same typing.
 
 use crate::scan::Project;
@@ -17,6 +18,10 @@ pub enum Row {
     /// The line between the sessions and everything else. Selectable, because
     /// no prompt library can make a row inert, and harmless when selected.
     Separator,
+    /// Rescan the configured roots and rewrite the cache.
+    Refresh,
+    /// Take a repository by path, for one that lives outside those roots.
+    AddManually,
 }
 
 /// The rows, in picker order. A project or worktree that already has a live
@@ -66,10 +71,14 @@ pub fn rows(sessions: &[Session], projects: &[Project], home: &Path) -> Vec<(Row
         }
     }
 
-    if !rows.is_empty() && !below.is_empty() {
+    if !rows.is_empty() {
         rows.push((Row::Separator, "─".repeat(24)));
     }
     rows.extend(below);
+    // The escape hatches, last: nobody reaches for them until the list is
+    // wrong, and they are why the picker is never empty.
+    rows.push((Row::Refresh, "↻  refresh the project list".to_string()));
+    rows.push((Row::AddManually, "+  add a project by path".to_string()));
     rows
 }
 

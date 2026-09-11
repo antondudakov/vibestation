@@ -1,7 +1,7 @@
 //! Finding the developer's repositories: walk the configured roots, merge in
 //! the manually added ones, and remember the result in a JSON cache so that
-//! opening the picker never waits on the disk. Rescanning is explicit —
-//! ticket 11 surfaces it as the picker's refresh action.
+//! opening the picker never waits on the disk. Rescanning is explicit: the
+//! picker's refresh action, never a timer.
 
 use crate::config::Config;
 use crate::group::{self, Group, Worktree};
@@ -30,16 +30,20 @@ pub fn cache_path(host: &dyn Host) -> Result<PathBuf> {
 /// unreadable cache is rescanned rather than reported: it is derived data, and
 /// the disk is the truth it was derived from.
 pub fn load_or_scan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
-    let path = cache_path(host)?;
-    if let Some(cached) = host.read_file(&path)? {
+    if let Some(cached) = host.read_file(&cache_path(host)?)? {
         if let Ok(projects) = serde_json::from_str(&cached) {
             return Ok(projects);
         }
     }
+    rescan(host, config)
+}
 
+/// Scan the roots again and rewrite the cache: the picker's refresh action,
+/// and the only thing that ever invalidates the cache.
+pub fn rescan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
     let projects = scan(host, config)?;
     let json = serde_json::to_string_pretty(&projects).context("encoding the projects cache")?;
-    host.write_file(&path, &format!("{json}\n"))?;
+    host.write_file(&cache_path(host)?, &format!("{json}\n"))?;
     Ok(projects)
 }
 

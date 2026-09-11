@@ -67,10 +67,12 @@ fn sessions_come_first_then_projects_with_their_worktrees_beneath() {
             "  └ vibestation-VBSN-9  ada/VBSN-9-fix",
             "api    ~/code/api",
             "notes  ~/notes",
+            "↻  refresh the project list",
+            "+  add a project by path",
         ],
         "the project that already has a session is not listed twice, its \
-         worktrees still stand where it would have been, and each worktree \
-         row carries its branch"
+         worktrees still stand where it would have been, each worktree row \
+         carries its branch, and the two actions come last"
     );
 }
 
@@ -87,8 +89,9 @@ fn projects_are_ranked_by_frecency() {
 
     assert!(rows[3].starts_with("notes"), "rows were {rows:?}");
     assert!(
-        rows.last().unwrap().starts_with("api"),
-        "the never-opened projects keep their scan order behind it: {rows:?}"
+        rows[rows.len() - 3].starts_with("api"),
+        "the never-opened projects keep their scan order behind it, above the \
+         two action rows: {rows:?}"
     );
 }
 
@@ -157,6 +160,8 @@ fn no_tmux_server_leaves_a_picker_of_projects_alone() {
             "  └ vibestation-VBSN-9  ada/VBSN-9-fix",
             "api          ~/code/api",
             "notes        ~/notes",
+            "↻  refresh the project list",
+            "+  add a project by path",
         ],
         "a cold start opens the picker rather than erroring, and with no \
          sessions above there is no separator"

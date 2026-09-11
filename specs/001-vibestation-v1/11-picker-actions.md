@@ -9,10 +9,4 @@ edit it later.
 
 **Blocked by:** 07.
 
-**Status:** ready-for-agent
-
-- [ ] Refresh and add-manually appear as entries in the picker
-- [ ] Refresh rescans the configured roots and rewrites the cache
-- [ ] Add-manually rejects a path that is not a git repository
-- [ ] An accepted path appears in the config file's extra projects, with the rest of the file preserved
-- [ ] A manually added project appears in the picker and survives a subsequent refresh
+**Status:** done

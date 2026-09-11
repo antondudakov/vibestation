@@ -18,31 +18,51 @@ use std::path::{Path, PathBuf};
 
 /// The single entry point tests drive: settle the config, open one picker over
 /// the live sessions and the ranked projects, and act on the choice.
+///
+/// The two escape hatches change the list rather than leaving it, so the
+/// picker reopens over what they changed; every other choice is terminal.
 pub fn run(host: &dyn Host) -> Result<()> {
-    let config = config::load_or_init(host)?;
+    let mut config = config::load_or_init(host)?;
+    let mut found = scan::load_or_scan(host, &config)?;
 
+    // Read once: neither escape hatch touches tmux or the frecency records.
     let sessions = tmux::list(host)?;
-    let projects = state::rank(
-        scan::load_or_scan(host, &config)?,
-        &state::load(host)?,
-        host.now(),
-    );
+    let opens = state::load(host)?;
+    let home = host.home()?;
 
-    let rows = picker::rows(&sessions, &projects, &host.home()?);
-    if rows.is_empty() {
-        // A picker over nothing is a prompt with no answer. Ticket 11's
-        // add-manually row means the list is never empty again.
-        println!("no tmux sessions and no projects; check projects_dirs in your config");
+    loop {
+        let projects = state::rank(found, &opens, host.now());
+        let rows = picker::rows(&sessions, &projects, &home);
+        let labels: Vec<String> = rows.iter().map(|(_, label)| label.clone()).collect();
+
+        match rows[host.select("Open", &labels)?].0 {
+            Row::Session(index) => return tmux::attach(host, &sessions[index].name),
+            Row::Separator => return Ok(()),
+            Row::Project(index) => return open(host, &config, &projects[index], None),
+            Row::Worktree(index, child) => {
+                return open(host, &config, &projects[index], Some(child))
+            }
+            Row::Refresh => found = scan::rescan(host, &config)?,
+            Row::AddManually => {
+                add(host, &mut config)?;
+                found = scan::rescan(host, &config)?;
+            }
+        }
+    }
+}
+
+/// Take a repository by path and write it into the config, where it will be
+/// picked up by this refresh and every one after it. A path that is not a
+/// repository is refused with a message rather than an error: the picker is
+/// still open behind it and the developer can simply try again.
+fn add(host: &dyn Host, config: &mut Config) -> Result<()> {
+    let typed = host.input("Path to the repository", "")?;
+    let project = config::expand(&host.home()?, &typed);
+    if !host.exists(&project.join(".git")) {
+        println!("{} is not a git repository", project.display());
         return Ok(());
     }
-
-    let labels: Vec<String> = rows.iter().map(|(_, label)| label.clone()).collect();
-    match rows[host.select("Open", &labels)?].0 {
-        Row::Session(index) => tmux::attach(host, &sessions[index].name),
-        Row::Separator => Ok(()),
-        Row::Project(index) => open(host, &config, &projects[index], None),
-        Row::Worktree(index, child) => open(host, &config, &projects[index], Some(child)),
-    }
+    config::add_extra(host, config, project)
 }
 
 /// Start work: settle on a session name, offer to cut the branch it names —

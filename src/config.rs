@@ -69,11 +69,7 @@ fn first_run(host: &dyn Host, path: &Path) -> Result<Config> {
         .unwrap_or_else(|| home.join("code"));
 
     let answer = host.input("Where do your projects live?", &guess.to_string_lossy())?;
-    let answer = answer.trim();
-    let projects_dir = match answer.strip_prefix("~/") {
-        Some(rest) => home.join(rest),
-        None => PathBuf::from(answer),
-    };
+    let projects_dir = expand(&home, &answer);
 
     let config = Config {
         projects_dirs: vec![projects_dir],
@@ -82,6 +78,28 @@ fn first_run(host: &dyn Host, path: &Path) -> Result<Config> {
     };
     host.write_file(path, &render(&config))?;
     Ok(config)
+}
+
+/// A path as the developer typed it: trimmed, with a leading `~/` resolved.
+pub fn expand(home: &Path, answer: &str) -> PathBuf {
+    let answer = answer.trim();
+    match answer.strip_prefix("~/") {
+        Some(rest) => home.join(rest),
+        None => PathBuf::from(answer),
+    }
+}
+
+/// Record a manually added repository and rewrite the file, so that it
+/// survives every later refresh and can be seen and edited by hand.
+///
+/// ponytail: the file is regenerated from the parsed config, so every setting
+/// survives but a hand-written comment does not. Splice the one line in place
+/// if anyone's annotations ever come to matter more than that costs.
+pub fn add_extra(host: &dyn Host, config: &mut Config, project: PathBuf) -> Result<()> {
+    if !config.extra_projects.contains(&project) {
+        config.extra_projects.push(project);
+    }
+    host.write_file(&path(host)?, &render(config))
 }
 
 /// `git config user.name`, slugified; the home directory's name when git has
