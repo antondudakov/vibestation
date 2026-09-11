@@ -10,9 +10,4 @@ before it is needed rather than being discovered broken at the end.
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
-
-- [ ] A tagged release builds and attaches macOS and Linux binaries
-- [ ] A Homebrew tap installs the macOS binary in one command
-- [ ] The released binary runs `--version` and reports the tagged version
-- [ ] The release workflow runs on tag push and requires no manual steps
+**Status:** done
