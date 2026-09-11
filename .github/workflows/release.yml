@@ -87,8 +87,9 @@ jobs:
   # `homebrew-<tap>`; this points its formula at the asset just attached, so
   # `brew install antondudakov/vibestation/vibestation` installs this release.
   #
-  # TAP_TOKEN is a personal access token with `repo` scope: the workflow's own
-  # token is scoped to this repository and cannot write to another one.
+  # TAP_TOKEN is a fine-grained personal access token with Contents: write on
+  # the tap repository alone: the workflow's own token is scoped to this
+  # repository and cannot write to another one.
   tap:
     needs: build
     runs-on: ubuntu-latest

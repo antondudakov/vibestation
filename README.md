@@ -98,9 +98,9 @@ reports the tagged version, attaches both, and points the formula in
 at the new assets. The tag must match `version` in `Cargo.toml` or the build
 stops, since the binary takes its version from there.
 
-That last step needs a `TAP_TOKEN` repository secret — a personal access token
-with `repo` scope — because a workflow's own token cannot write to another
-repository.
+That last step needs a `TAP_TOKEN` repository secret — a fine-grained personal
+access token granting Contents: write on the tap repository alone — because a
+workflow's own token cannot write to another repository.
 
 ## Development
 
