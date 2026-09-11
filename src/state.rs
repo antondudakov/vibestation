@@ -84,7 +84,8 @@ fn score(open: &Open, now: u64) -> f64 {
     }
 }
 
-fn seconds(time: SystemTime) -> u64 {
+/// Shared with [`crate::tmux`], which ages sessions off the same clock.
+pub fn seconds(time: SystemTime) -> u64 {
     time.duration_since(UNIX_EPOCH)
         .map(|since| since.as_secs())
         .unwrap_or_default()

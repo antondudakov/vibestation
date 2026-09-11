@@ -74,14 +74,18 @@ pub fn rows(
         .enumerate()
         .map(|(index, session)| {
             let cells = cells(&[
-                // `●` is a client somewhere else; `○` is a session running
-                // with nobody in it.
-                if session.attached { "●" } else { "○" },
+                // `▶` is the session you are in, `●` a client somewhere else,
+                // `○` a session running with nobody in it at all.
+                match (session.current, session.attached) {
+                    (true, _) => "▶",
+                    (_, true) => "●",
+                    _ => "○",
+                },
                 &session.name,
                 &abbreviate(&session.path.to_string_lossy(), home),
                 strip(&session.branch, username),
                 &session.command,
-                "",
+                &session.age,
             ]);
             (Row::Session(index), Some(cells))
         })

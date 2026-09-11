@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use vibestation::fake::{Answer, FakeHost};
 use vibestation::state;
 
-const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{session_name}";
+const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{session_name}";
 const BRANCH: &str = "git rev-parse --abbrev-ref HEAD";
 const ORIGIN_HEAD: &str = "git symbolic-ref --short refs/remotes/origin/HEAD";
 const CONFIG: &str = "/home/dev/.vibestation/config.toml";

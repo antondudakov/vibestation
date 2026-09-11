@@ -3,7 +3,7 @@
 
 use vibestation::fake::{Answer, FakeHost};
 
-const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{session_name}";
+const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{session_name}";
 const CONFIG: &str = "/home/dev/.vibestation/config.toml";
 const CACHE: &str = "/home/dev/.vibestation/projects-cache.json";
 
