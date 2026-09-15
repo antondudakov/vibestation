@@ -58,8 +58,16 @@ pub fn fetch(host: &dyn Host, path: &Path) -> Result<Output> {
 }
 
 /// Cut `name` from `base` in the existing checkout and switch to it.
+///
+/// `--no-track`: cutting from `origin/<default>` would otherwise set that as
+/// the new branch's upstream, pointing its push and pull at the default
+/// branch. A branch cut here tracks nothing until its first push names the
+/// remote branch after itself.
 pub fn create_branch(host: &dyn Host, path: &Path, name: &str, base: &str) -> Result<()> {
-    let out = host.run(&["git", "checkout", "-b", name, base], Some(path))?;
+    let out = host.run(
+        &["git", "checkout", "--no-track", "-b", name, base],
+        Some(path),
+    )?;
     match out.succeeded() {
         true => Ok(()),
         false => Err(anyhow!(
@@ -70,7 +78,8 @@ pub fn create_branch(host: &dyn Host, path: &Path, name: &str, base: &str) -> Re
 }
 
 /// Cut `name` from `base` into a new worktree at `path`, in one operation —
-/// `git worktree add` creates the branch and the directory together.
+/// `git worktree add` creates the branch and the directory together. Tracks
+/// nothing, for the reason [`create_branch`] gives.
 pub fn add_worktree(
     host: &dyn Host,
     main: &Path,
@@ -83,6 +92,7 @@ pub fn add_worktree(
             "git",
             "worktree",
             "add",
+            "--no-track",
             "-b",
             name,
             &path.to_string_lossy(),

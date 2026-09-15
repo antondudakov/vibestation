@@ -71,7 +71,7 @@ fn origin_head_names_the_default_branch() {
             .succeeds(ORIGIN_HEAD, "origin/develop\n")
             .succeeds(FETCH, "")
             .succeeds(
-                "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy origin/develop",
+                "/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy origin/develop",
                 "",
             ),
         [Answer::Select(1), Answer::Confirm(true)],
@@ -94,7 +94,7 @@ fn without_origin_head_a_local_main_is_the_default_branch() {
             .fails(ORIGIN_HEAD, 128, "is not a symbolic ref")
             .succeeds(MAIN, "9f1c\n")
             .succeeds(
-                "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy main",
+                "/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy main",
                 "",
             ),
         [Answer::Select(1), Answer::Confirm(false)],
@@ -115,7 +115,7 @@ fn without_either_the_default_branch_is_master() {
             .fails(ORIGIN_HEAD, 128, "is not a symbolic ref")
             .fails(MAIN, 1, "")
             .succeeds(
-                "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy master",
+                "/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy master",
                 "",
             ),
         [Answer::Select(1), Answer::Confirm(false)],
@@ -133,7 +133,7 @@ fn a_configured_default_branch_wins_and_asks_git_nothing() {
     let host = choosing(
         host("projects_dirs = [\"/home/dev/code\"]\nusername = \"ada\"\ndefault_branch = \"develop\"\n")
             .succeeds(BRANCH, "develop\n")
-            .succeeds("/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy develop", ""),
+            .succeeds("/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy develop", ""),
         [Answer::Select(1), Answer::Confirm(false)],
     );
 
@@ -153,7 +153,7 @@ fn a_configured_default_branch_wins_and_asks_git_nothing() {
 fn accepting_the_fetch_cuts_from_the_remote_ref_and_touches_no_local_one() {
     let host = choosing(
         detected().succeeds(FETCH, "").succeeds(
-            "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy origin/main",
+            "/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy origin/main",
             "",
         ),
         [Answer::Select(1), Answer::Confirm(true)],
@@ -169,7 +169,9 @@ fn accepting_the_fetch_cuts_from_the_remote_ref_and_touches_no_local_one() {
     );
     assert_eq!(
         git(&host).last().unwrap(),
-        "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy origin/main"
+        "/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy origin/main",
+        "cut from the remote ref, and tracking none of it: an upstream of \
+         origin/main would point the new branch's push at the default branch"
     );
     assert!(
         !git(&host)
@@ -189,7 +191,7 @@ fn accepting_the_fetch_cuts_from_the_remote_ref_and_touches_no_local_one() {
 fn declining_the_fetch_emits_none_and_cuts_from_the_local_ref() {
     let host = choosing(
         detected().succeeds(
-            "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy main",
+            "/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy main",
             "",
         ),
         [Answer::Select(1), Answer::Confirm(false)],
@@ -211,7 +213,7 @@ fn the_fetch_default_comes_from_config() {
         )
             .succeeds(BRANCH, "main\n")
             .succeeds(ORIGIN_HEAD, "origin/main\n")
-            .succeeds("/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy main", ""),
+            .succeeds("/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy main", ""),
         [Answer::Select(1), Answer::Confirm(false)],
     );
 
@@ -226,7 +228,7 @@ fn a_failing_fetch_warns_and_branches_from_the_local_ref() {
         detected()
             .fails(FETCH, 128, "could not resolve host: github.com")
             .succeeds(
-                "/home/dev/code/api $ git checkout -b ada/VBSN-4-tidy main",
+                "/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy main",
                 "",
             ),
         [Answer::Select(1), Answer::Confirm(true)],
@@ -347,7 +349,7 @@ fn a_name_that_is_already_the_current_branch_offers_no_branch() {
 fn the_worktree_is_the_pre_selected_option_and_lands_beside_the_checkout() {
     let host = choosing(
         detected().succeeds(FETCH, "").succeeds(
-            "/home/dev/code/api $ git worktree add -b ada/VBSN-4-tidy \
+            "/home/dev/code/api $ git worktree add --no-track -b ada/VBSN-4-tidy \
              /home/dev/code/api-VBSN-4-tidy origin/main",
             "",
         ),
@@ -377,7 +379,7 @@ fn the_worktree_is_the_pre_selected_option_and_lands_beside_the_checkout() {
     );
     assert_eq!(
         git(&host).last().unwrap(),
-        "/home/dev/code/api $ git worktree add -b ada/VBSN-4-tidy \
+        "/home/dev/code/api $ git worktree add --no-track -b ada/VBSN-4-tidy \
          /home/dev/code/api-VBSN-4-tidy origin/main",
         "branch and worktree are one operation, cut from the fetched ref"
     );

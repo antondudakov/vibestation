@@ -133,6 +133,10 @@ ref is never touched and the cut cannot fail on divergence. A fetch that fails
 — offline, no remote, no auth — warns and cuts from the local ref instead.
 Never fatal.
 
+A cut branch tracks nothing. Cutting from `origin/<default>` would otherwise
+make the default branch its upstream, pointing its push and pull at `main`; the
+first `git push -u` names the remote branch after the local one instead.
+
 The default branch is your config override if you set one, else what
 `origin/HEAD` points at, else whichever of `main` and `master` exists.
 
