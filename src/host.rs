@@ -195,11 +195,7 @@ impl Host for RealHost {
     }
 
     fn input(&self, message: &str, default: &str) -> Result<String> {
-        prompt(
-            inquire::Text::new(message)
-                .with_initial_value(default)
-                .prompt(),
-        )
+        crate::line::edit(message, default)
     }
 
     fn confirm(&self, message: &str, default: bool) -> Result<bool> {
