@@ -7,10 +7,11 @@ use crate::host::{Host, Output};
 use anyhow::{anyhow, Result};
 use std::path::Path;
 
-/// The branch checked out in `path`, empty when it is not a repository.
+/// The branch checked out in `path`, empty when it is not a repository or its
+/// HEAD is detached — git answers `HEAD` for that, which names nothing.
 pub fn branch(host: &dyn Host, path: &Path) -> Result<String> {
     let out = host.run(&["git", "rev-parse", "--abbrev-ref", "HEAD"], Some(path))?;
-    Ok(match out.succeeded() {
+    Ok(match out.succeeded() && out.trimmed() != "HEAD" {
         true => out.trimmed().to_string(),
         false => String::new(),
     })

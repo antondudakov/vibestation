@@ -65,6 +65,7 @@ fn sessions_come_first_then_projects_with_their_worktrees_beneath() {
             "○  ada/VBSN-4-picker   ~/code/vibestation  VBSN-4-picker  nvim",
             "●  notes-scratch       /etc                               zsh",
             "──────────────────────────────────────────────────────────────",
+            "   vibestation         ~/code/vibestation",
             "└  vibestation-VBSN-1                      VBSN-1-init",
             "└  vibestation-VBSN-9                      VBSN-9-fix",
             "   api                 ~/code/api",
@@ -72,10 +73,10 @@ fn sessions_come_first_then_projects_with_their_worktrees_beneath() {
             "↻  refresh the project list",
             "✚  add a project by path",
         ],
-        "the project that already has a session is not listed twice, its \
-         worktrees still stand where it would have been, each worktree row \
-         carries its branch in the same column as the sessions above, and the \
-         two actions come last"
+        "a project with a session of its own is still listed below it — the \
+         session row resumes that work, the project row starts new work in the \
+         same repository — each worktree row carries its branch in the same \
+         column as the sessions above, and the two actions come last"
     );
 }
 
@@ -109,7 +110,7 @@ fn choosing_a_session_outside_tmux_attaches_to_it() {
 
     assert_eq!(
         host.prompts(),
-        ["Open  2 running · 2 projects"],
+        ["Open  2 running · 3 projects"],
         "the prompt line never scrolls, so it carries what the list is made of"
     );
     assert_eq!(
@@ -146,8 +147,8 @@ fn the_separator_reopens_the_picker_and_an_abort_leaves_it() {
     assert_eq!(
         separator.prompts(),
         [
-            "Open  2 running · 2 projects",
-            "Open  2 running · 2 projects"
+            "Open  2 running · 3 projects",
+            "Open  2 running · 3 projects"
         ],
         "choosing decoration costs nothing: the same picker comes back"
     );
@@ -204,12 +205,12 @@ fn columns_line_up_across_sessions_projects_and_worktrees() {
 
     assert_eq!(
         column(&rows[0], "~/code/vibestation"),
-        column(&rows[5], "~/code/api"),
+        column(&rows[6], "~/code/api"),
         "a session's directory and a project's start in the same column: {rows:?}"
     );
     assert_eq!(
         column(&rows[0], "VBSN-4-picker  nvim"),
-        column(&rows[3], "VBSN-1-init"),
+        column(&rows[4], "VBSN-1-init"),
         "and so do a session's branch and a worktree's: {rows:?}"
     );
     assert_eq!(
@@ -310,9 +311,10 @@ fn the_glyph_says_what_each_row_is() {
 
     assert_eq!(
         glyphs,
-        ['○', '●', '─', '└', '└', ' ', ' ', '↻', '✚'],
-        "detached, attached elsewhere, the separator, two worktrees, two \
-         projects, and the two escape hatches — readable at any scroll position"
+        ['○', '●', '─', ' ', '└', '└', ' ', ' ', '↻', '✚'],
+        "detached, attached elsewhere, the separator, a project with its two \
+         worktrees, two more projects, and the two escape hatches — readable \
+         at any scroll position"
     );
 }
 
@@ -333,11 +335,11 @@ fn one_long_worktree_name_does_not_widen_the_name_column() {
     let rows = rows(&host);
 
     assert!(
-        rows[3].contains('…'),
+        rows[4].contains('…'),
         "the long name is the one that gives way: {rows:?}"
     );
     assert_eq!(
-        column(&rows[4], "~/code/api"),
+        column(&rows[5], "~/code/api"),
         column(&rows[0], "~/code/vibestation"),
         "and the column it is in stays where it was: {rows:?}"
     );
@@ -392,7 +394,7 @@ fn the_prompt_line_counts_what_the_list_is_made_of() {
         vibestation::run(host).unwrap_err();
     }
 
-    assert_eq!(sessions.prompts(), ["Open  2 running · 2 projects"]);
+    assert_eq!(sessions.prompts(), ["Open  2 running · 3 projects"]);
     assert_eq!(
         cold.prompts(),
         ["Open  3 projects"],

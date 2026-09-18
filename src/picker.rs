@@ -58,8 +58,9 @@ const MIN_BRANCH: usize = 6;
 /// before that happens.
 const SOFT_DIR: usize = 18;
 
-/// The rows, in picker order. A project or worktree that already has a live
-/// session is left out: its session row above is the same work.
+/// The rows, in picker order. A directory that already has a session is listed
+/// twice on purpose: the session row resumes that work, and the project or
+/// worktree row below starts something new in the same repository.
 pub fn rows(
     sessions: &[Session],
     projects: &[Project],
@@ -67,8 +68,6 @@ pub fn rows(
     username: &str,
     width: usize,
 ) -> Vec<(Row, String)> {
-    let live: Vec<&Path> = sessions.iter().map(|s| s.path.as_path()).collect();
-
     let mut table: Vec<(Row, Option<Cells>)> = sessions
         .iter()
         .enumerate()
@@ -93,15 +92,12 @@ pub fn rows(
 
     let mut below = Vec::new();
     for (index, project) in projects.iter().enumerate() {
-        if !live.contains(&project.path.as_path()) {
-            let path = abbreviate(&project.path.to_string_lossy(), home);
-            let cells = cells(&["", &project.name, &path, "", "", ""]);
-            below.push((Row::Project(index), Some(cells)));
-        }
+        let path = abbreviate(&project.path.to_string_lossy(), home);
+        below.push((
+            Row::Project(index),
+            Some(cells(&["", &project.name, &path, "", "", ""])),
+        ));
         for (child, worktree) in project.worktrees.iter().enumerate() {
-            if live.contains(&worktree.path.as_path()) {
-                continue;
-            }
             // The corner does the nesting the indent used to, which keeps the
             // branch in the same column as every session's branch.
             let cells = cells(&[
@@ -130,8 +126,7 @@ pub fn rows(
 
 /// The prompt line, which is the one line inquire never scrolls away — so it
 /// is where what the list is made of belongs. Worktrees credit their project,
-/// as they do everywhere else, and a project showing as its own live session
-/// is counted as the session it is.
+/// as they do everywhere else.
 pub fn title(rows: &[(Row, String)]) -> String {
     let count = |kind: fn(&Row) -> bool| rows.iter().filter(|(row, _)| kind(row)).count();
     let running = count(|row| matches!(row, Row::Session(_)));

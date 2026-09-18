@@ -46,9 +46,9 @@ pub fn run(host: &dyn Host) -> Result<()> {
             Row::Session(index) => return tmux::attach(host, &sessions[index].name),
             // Decoration: choosing it costs nothing and reopens the list.
             Row::Separator => continue,
-            Row::Project(index) => return open(host, &config, &projects[index], None),
+            Row::Project(index) => return open(host, &config, &sessions, &projects[index], None),
             Row::Worktree(index, child) => {
-                return open(host, &config, &projects[index], Some(child))
+                return open(host, &config, &sessions, &projects[index], Some(child))
             }
             Row::Refresh => found = scan::rescan(host, &config)?,
             Row::AddManually => {
@@ -79,38 +79,46 @@ fn add(host: &dyn Host, config: &mut Config) -> Result<()> {
 fn open(
     host: &dyn Host,
     config: &Config,
+    sessions: &[tmux::Session],
     project: &Project,
     worktree: Option<usize>,
 ) -> Result<()> {
-    let (dir, branch) = match worktree {
-        Some(child) => {
-            let worktree = &project.worktrees[child];
-            (worktree.path.as_path(), worktree.branch.clone())
-        }
-        None => (
-            project.path.as_path(),
-            git::branch(host, &project.path)?.clone(),
-        ),
+    let dir = match worktree {
+        Some(child) => project.worktrees[child].path.as_path(),
+        None => project.path.as_path(),
     };
+    // Asked of git, never of the cache: the cached branch is whatever was
+    // checked out at the last refresh, and a worktree moves between branches
+    // without the picker being told.
+    let branch = git::branch(host, dir)?;
 
-    // A worktree row, or a checkout already on a feature branch, is work in
-    // progress: its branch names it, nothing is asked and no branch is cut.
-    let default = match worktree.is_some() || branch.is_empty() {
+    let default = match branch.is_empty() {
         true => String::new(),
         false => git::default_branch(host, config, dir)?,
     };
+    // A checkout already on a feature branch is work in progress: its branch
+    // names it and nothing is asked. Two things override that. A directory
+    // that already has a session is being chosen over that session's own row,
+    // which is asking for something new rather than to resume. And in a
+    // worktree the branch is the likely name rather than the only one — the
+    // same tree carries successive pieces of work — so it is offered: Enter
+    // takes it, declining names the work from scratch.
     let started = !branch.is_empty() && branch != default;
-    let name = match started {
-        true => naming::from_branch(&config.username, &label(dir, &branch)),
-        false => {
-            let said = host.input("What are you working on?", "")?;
-            let suggested = naming::suggest(&config.username, &said);
-            naming::sanitize(&host.input("Session name", &suggested)?)
-        }
+    let running = sessions.iter().any(|session| session.path == dir);
+    let named = naming::from_branch(&config.username, &branch);
+    let keep = started
+        && !running
+        && (worktree.is_none() || host.confirm(&format!("Open {named}?"), true)?);
+    let name = match keep {
+        true => named,
+        false => ask(host, config)?,
     };
 
-    let dir = match !started && !branch.is_empty() && name != branch {
-        true => branch_for(host, config, dir, &name, &default)?,
+    // Whenever the settled name is not the branch already checked out here,
+    // the branch it names is offered — which is how work started against a
+    // directory that is busy gets a worktree of its own.
+    let dir = match !keep && !branch.is_empty() && name != branch {
+        true => branch_for(host, config, dir, &name, &branch, &default)?,
         false => dir.to_path_buf(),
     };
 
@@ -120,6 +128,14 @@ fn open(
     tmux::attach(host, &name)
 }
 
+/// Name the work from one line of prompt input: a ticket and a description in,
+/// the name they imply offered as an editable default, never applied silently.
+fn ask(host: &dyn Host, config: &Config) -> Result<String> {
+    let said = host.input("What are you working on?", "")?;
+    let suggested = naming::suggest(&config.username, &said);
+    Ok(naming::sanitize(&host.input("Session name", &suggested)?))
+}
+
 /// Offer the branch the session was just named for: a new worktree beside the
 /// checkout, in place in it, or neither. Returns the directory the work now
 /// lives in — the worktree, or the checkout for the other two.
@@ -127,11 +143,16 @@ fn open(
 /// The worktree leads because it alters no existing checkout and so is always
 /// safe; a dirty tree withholds the in-place option rather than offering one
 /// that would be refused.
+///
+/// `here` is the branch this checkout is on, which is what declining leaves it
+/// on; `default` is what a cut branch comes off, and the two differ whenever
+/// work is started from a checkout that is already on a branch of its own.
 fn branch_for(
     host: &dyn Host,
     config: &Config,
     main: &Path,
     name: &str,
+    here: &str,
     default: &str,
 ) -> Result<PathBuf> {
     let worktree = naming::worktree_dir(main, &config.username, name);
@@ -147,7 +168,7 @@ fn branch_for(
     if !dirty {
         options.push(format!("Branch in place in {}", main.display()));
     }
-    options.push(format!("Neither, stay on {default}"));
+    options.push(format!("Neither, stay on {here}"));
 
     let choice = host.select(&format!("Create branch {name}?"), &options)?;
     if choice + 1 == options.len() {
@@ -205,18 +226,5 @@ fn reuse(host: &dyn Host, main: &Path, path: &Path, name: &str) -> Result<PathBu
             "{} already exists and is not a worktree on {name}",
             path.display()
         )),
-    }
-}
-
-/// What to name work by when it has a branch — or, for a detached worktree and
-/// for a directory git has nothing to say about, its own directory name.
-fn label(dir: &Path, branch: &str) -> String {
-    match branch.is_empty() {
-        true => dir
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .into_owned(),
-        false => branch.to_string(),
     }
 }

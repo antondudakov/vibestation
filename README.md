@@ -4,13 +4,14 @@ One command, one fuzzy picker: your live tmux sessions on top, your git
 projects below, and a session waiting at the end of either.
 
 ```
-? Open  2 running · 2 projects
+? Open  2 running · 3 projects
 ▶  ada/VBSN-4-picker   ~/code/vibestation  VBSN-4-picker   nvim  2m
 ●  notes-scratch       /etc                                zsh   1h
 ───────────────────────────────────────────────────────────────────
    api                 ~/code/api
 └  api-VBSN-7-retries                      VBSN-7-retries
    notes               ~/notes
+   vibestation         ~/code/vibestation
 ↻  refresh the project list
 ✚  add a project by path
 [↑↓ move · type to filter · enter select · esc cancel]
@@ -77,8 +78,9 @@ Your own username is stripped from every branch shown, since it is on all of
 them. The prompt line above the list — the one line that never scrolls — says
 how much of the list is running work.
 
-A project that already has a session appears only as that session — the same
-work is never listed twice.
+A project that already has a session is still listed below it. The session row
+resumes the work running there; the project row starts something else in the
+same repository, in a worktree of its own.
 
 Choosing a session joins it: `switch-client` when you are already inside tmux,
 `attach-session` when you are not. Esc costs nothing and emits nothing, and so
@@ -92,14 +94,22 @@ accepts into your config, so it survives every later refresh.
 
 ## Starting work
 
-Choosing a project or a worktree settles on a session name first.
+Choosing a project or a worktree settles on a session name first. The branch it
+is named for is read from git at that moment, never from the project cache,
+which knows only where a worktree was pointing the last time you refreshed.
 
-A checkout already on a feature branch, or a worktree, is work in progress:
-its branch names it, `username/<branch>`, and nothing is asked. That makes
-resuming a single keypress.
+A checkout already on a feature branch is work in progress: its branch names
+it, `username/<branch>`, and nothing is asked. That makes resuming a single
+keypress. A worktree is asked about — `Open ada/VBSN-1-init?` — because one
+worktree carries successive pieces of work; Enter takes the name, `n` names the
+work from scratch.
 
-A checkout sitting on its default branch is starting something, so it asks
-once — "What are you working on?" — and turns one line into a name:
+A directory whose session is already running is never named for its branch: its
+session row above is the way back to that work, so choosing the row below it is
+asking for something new.
+
+Anything else is starting something, so it asks once — "What are you working
+on?" — and turns one line into a name:
 
 | you type | you get |
 |---|---|
@@ -124,8 +134,8 @@ to cut it, three ways:
    is the default, because it alters no existing checkout and so is always safe.
 2. **In place** in the current checkout. Withheld, with an explanation, when
    the tree has uncommitted changes.
-3. **Neither** — the session is created on the current branch and no git state
-   changes. Saying no is not the same as cancelling.
+3. **Neither** — the session is created on the branch the checkout is already
+   on and no git state changes. Saying no is not the same as cancelling.
 
 A fetch is offered before the cut, pre-answered from `fetch_before_branch`. On
 success the branch comes off `origin/<default>`, so your local default branch

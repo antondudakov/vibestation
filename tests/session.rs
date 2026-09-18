@@ -35,8 +35,18 @@ fn host() -> FakeHost {
             &format!("/home/dev/code/notes $ {BRANCH}"),
             "ada/notes-tidy\n",
         )
+        // The worktree has been checked out onto something else since the
+        // cache above was written, which is what the cache cannot know.
+        .succeeds(
+            &format!("/home/dev/code/api-VBSN-1 $ {BRANCH}"),
+            "ada/VBSN-2-retries\n",
+        )
         .succeeds(
             &format!("/home/dev/code/api $ {ORIGIN_HEAD}"),
+            "origin/main\n",
+        )
+        .succeeds(
+            &format!("/home/dev/code/api-VBSN-1 $ {ORIGIN_HEAD}"),
             "origin/main\n",
         )
         .succeeds(
@@ -59,6 +69,7 @@ fn absent(host: FakeHost) -> FakeHost {
         "ada/something-else",
         "ada/notes-tidy",
         "ada/VBSN-1-init",
+        "ada/VBSN-2-retries",
     ]
     .iter()
     .fold(host, |host, name| {
@@ -156,21 +167,119 @@ fn a_checkout_already_on_a_feature_branch_asks_nothing() {
 }
 
 #[test]
-fn selecting_a_worktree_creates_a_session_in_it_with_no_prompts() {
+fn a_worktree_is_named_for_the_branch_it_is_on_now_not_the_cached_one() {
     let host = absent(host())
         .succeeds(
-            "tmux new-session -d -s ada/VBSN-1-init -c /home/dev/code/api-VBSN-1",
+            "tmux new-session -d -s ada/VBSN-2-retries -c /home/dev/code/api-VBSN-1",
             "",
         )
-        .answer(Answer::Select(1));
+        .answers([Answer::Select(1), Answer::Confirm(true)]);
 
     vibestation::run(&host).unwrap();
 
-    assert_eq!(host.prompts(), ["Open  2 projects"]);
+    assert_eq!(
+        host.prompts(),
+        ["Open  2 projects", "Open ada/VBSN-2-retries? [Y/n]"],
+        "the name offered is the branch git reports, not ada/VBSN-1-init from \
+         the cache; taking it is one keypress"
+    );
     assert_eq!(
         created(&host),
-        ["tmux new-session -d -s ada/VBSN-1-init -c /home/dev/code/api-VBSN-1"],
-        "the session is rooted in the worktree, named after its branch"
+        ["tmux new-session -d -s ada/VBSN-2-retries -c /home/dev/code/api-VBSN-1"],
+        "the session is rooted in the worktree, named after the branch in it"
+    );
+}
+
+#[test]
+fn declining_the_offered_name_names_the_work_from_scratch() {
+    let host = absent(host())
+        .succeeds(
+            "tmux new-session -d -s ada/something-else -c /home/dev/code/api-VBSN-1",
+            "",
+        )
+        .succeeds("/home/dev/code/api-VBSN-1 $ git status --porcelain", "")
+        .answers([
+            Answer::Select(1),
+            Answer::Confirm(false),
+            Answer::text("VBSN-4 picker rows"),
+            Answer::text("ada/something-else"),
+            Answer::Select(2),
+        ]);
+
+    vibestation::run(&host).unwrap();
+
+    assert_eq!(
+        host.prompts(),
+        [
+            "Open  2 projects",
+            "Open ada/VBSN-2-retries? [Y/n]",
+            "What are you working on? []",
+            "Session name [ada/VBSN-4-picker-rows]",
+            "Create branch ada/something-else?",
+        ],
+        "declining falls through to the same questions a project asks, the \
+         branch among them"
+    );
+    assert_eq!(
+        host.options().last().unwrap(),
+        "Neither, stay on ada/VBSN-2-retries",
+        "declining the branch leaves the worktree on the branch it is on, not \
+         on the default one"
+    );
+    assert_eq!(
+        created(&host),
+        ["tmux new-session -d -s ada/something-else -c /home/dev/code/api-VBSN-1"],
+        "named freshly, still rooted in the worktree and cutting no branch"
+    );
+}
+
+/// The headline of listing a busy project anyway: its session row resumes the
+/// work that is running, and the project row below it starts something else in
+/// a worktree of its own, without disturbing either.
+#[test]
+fn a_project_whose_session_is_running_can_still_start_new_work() {
+    let host = absent(host())
+        .succeeds(LIST, "1\t0\t/home/dev/code/notes\tnvim\tada/notes-tidy\n")
+        .succeeds("/home/dev/code/notes $ git status --porcelain", "")
+        .succeeds(
+            "/home/dev/code/notes $ git worktree add --no-track -b \
+             ada/VBSN-4-picker-rows /home/dev/code/notes-VBSN-4-picker-rows main",
+            "",
+        )
+        .succeeds(
+            "tmux new-session -d -s ada/VBSN-4-picker-rows \
+             -c /home/dev/code/notes-VBSN-4-picker-rows",
+            "",
+        )
+        .answers([
+            // Row 0 is the running session, 1 the separator, 2 `api` with its
+            // worktree at 3, and 4 is `notes` — the project the session is in.
+            Answer::Select(4),
+            Answer::text("VBSN-4 picker rows"),
+            Answer::text("ada/VBSN-4-picker-rows"),
+            Answer::Select(0),
+            Answer::Confirm(false),
+        ]);
+
+    vibestation::run(&host).unwrap();
+
+    assert_eq!(
+        host.prompts(),
+        [
+            "Open  1 running · 2 projects",
+            "What are you working on? []",
+            "Session name [ada/VBSN-4-picker-rows]",
+            "Create branch ada/VBSN-4-picker-rows?",
+            "Fetch origin first? [Y/n]",
+        ],
+        "picking the project over its own session row means new work, so the \
+         branch it is sitting on is not offered as the name"
+    );
+    assert_eq!(
+        created(&host),
+        ["tmux new-session -d -s ada/VBSN-4-picker-rows \
+          -c /home/dev/code/notes-VBSN-4-picker-rows"],
+        "the new session is rooted in the new worktree"
     );
 }
 
@@ -196,10 +305,10 @@ fn inside_tmux_the_new_session_is_switched_to_rather_than_attached() {
 fn the_open_counts_towards_the_project_not_the_worktree() {
     let host = absent(host())
         .succeeds(
-            "tmux new-session -d -s ada/VBSN-1-init -c /home/dev/code/api-VBSN-1",
+            "tmux new-session -d -s ada/VBSN-2-retries -c /home/dev/code/api-VBSN-1",
             "",
         )
-        .answer(Answer::Select(1));
+        .answers([Answer::Select(1), Answer::Confirm(true)]);
 
     vibestation::run(&host).unwrap();
 
