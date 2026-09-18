@@ -114,6 +114,12 @@ an editable default, never applied silently. `.` and `:` become `-`, because
 tmux forbids them in session names; slashes stay, because tmux allows them and
 they carry the convention.
 
+Every text prompt is a line you can edit the way you edit any other line:
+`C-a` and `C-e` for the ends, `C-b` and `C-f` and `M-b` and `M-f` to move,
+`C-w` and `M-d` to kill a word either way, `C-k` and `C-u` to kill to an end,
+`C-d` to delete forward. The arrows, Home and End still work. Esc cancels, and
+an answer offered as a default is there to be edited, never to be retyped.
+
 ### The branch
 
 When the accepted name differs from the branch you are on, vibestation offers
