@@ -3,6 +3,7 @@ pub mod fake;
 pub mod git;
 pub mod group;
 pub mod host;
+pub mod line;
 pub mod naming;
 pub mod picker;
 pub mod scan;
