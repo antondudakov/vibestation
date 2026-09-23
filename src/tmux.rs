@@ -32,6 +32,8 @@ pub struct Session {
     /// empty for a session no client has ever attached. Rendered here because
     /// this is the module holding the clock tmux's answer is measured against.
     pub age: String,
+    /// What you left yourself about the work in it; empty for nothing.
+    pub note: String,
 }
 
 /// Only the active pane is inspected: in a session's format context, the pane
@@ -40,7 +42,8 @@ pub struct Session {
 ///
 /// Tab-separated, with the session name last so that a name containing a tab
 /// still parses — the fields before it are split off and the rest is the name.
-const FORMAT: &str = "#{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{session_name}";
+/// `@note` is the session's own user option, which [`note`] sets.
+const FORMAT: &str = "#{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{@note}\t#{session_name}";
 
 /// The live sessions, most recently left first — the one you want is usually
 /// the one you were just in. A session no client has ever attached sorts last,
@@ -92,11 +95,12 @@ fn age(last: u64, now: u64) -> String {
 }
 
 fn parse(line: &str) -> Option<(u64, Session)> {
-    let mut fields = line.splitn(5, '\t');
+    let mut fields = line.splitn(6, '\t');
     let attached = fields.next()?;
     let last = fields.next()?.trim().parse().unwrap_or(0);
     let path = fields.next()?;
     let command = fields.next()?;
+    let note = fields.next()?;
     let name = fields.next().filter(|name| !name.is_empty())?;
 
     Some((
@@ -109,6 +113,7 @@ fn parse(line: &str) -> Option<(u64, Session)> {
             current: false,
             branch: String::new(),
             age: String::new(),
+            note: note.to_string(),
         },
     ))
 }
@@ -179,6 +184,27 @@ pub fn rename(host: &dyn Host, name: &str, to: &str) -> Result<()> {
         true => Ok(()),
         false => Err(anyhow!(
             "tmux would not rename {name} to {to}: {}",
+            out.stderr.trim()
+        )),
+    }
+}
+
+/// Leave `note` on the session, as a user option tmux keeps for as long as the
+/// session lives: it follows a rename and goes with a kill, and no file of
+/// ours has to be told either. An empty note takes it off.
+pub fn note(host: &dyn Host, name: &str, note: &str) -> Result<()> {
+    // One line, since it comes back as one field of one line of
+    // `list-sessions`.
+    let note = note.split_whitespace().collect::<Vec<_>>().join(" ");
+    let argv = match note.is_empty() {
+        true => vec!["tmux", "set-option", "-u", "-t", name, "@note"],
+        false => vec!["tmux", "set-option", "-t", name, "@note", &note],
+    };
+    let out = host.run(&argv, None)?;
+    match out.succeeded() {
+        true => Ok(()),
+        false => Err(anyhow!(
+            "tmux would not note session {name}: {}",
             out.stderr.trim()
         )),
     }

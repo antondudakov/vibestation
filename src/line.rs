@@ -10,10 +10,10 @@
 
 use crate::host::Aborted;
 use anyhow::Result;
-use crossterm::cursor::MoveToColumn;
+use crossterm::cursor::{MoveToColumn, MoveUp};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::queue;
-use crossterm::style::{Print, PrintStyledContent, Stylize};
+use crossterm::style::{Color, Print, PrintStyledContent, StyledContent, Stylize};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
 use std::io::{self, Write};
 
@@ -127,22 +127,25 @@ fn word_right(chars: &[char], at: usize) -> usize {
     at
 }
 
-/// Free text, pre-filled with an editable `initial`, or [`Aborted`].
-pub fn edit(message: &str, initial: &str) -> Result<String> {
+/// Free text, pre-filled with an editable `initial`, in a terminal `width`
+/// wide, or [`Aborted`].
+pub fn edit(message: &str, initial: &str, width: usize) -> Result<String> {
     enable_raw_mode()?;
-    let answer = read(message, initial);
+    let answer = read(message, initial, width);
     let _ = disable_raw_mode();
     answer
 }
 
-fn read(message: &str, initial: &str) -> Result<String> {
+fn read(message: &str, initial: &str, width: usize) -> Result<String> {
     let mut line = Line {
         chars: initial.chars().collect(),
         cursor: initial.chars().count(),
     };
+    let mut drawn = false;
 
     loop {
-        render(message, &line, "?")?;
+        render(message, &line, width, drawn)?;
+        drawn = true;
         let Event::Key(key) = event::read()? else {
             continue;
         };
@@ -151,44 +154,78 @@ fn read(message: &str, initial: &str) -> Result<String> {
             step => step,
         };
 
-        // An answered prompt takes inquire's `>`; an abandoned one keeps its
-        // `?`, since nothing was answered and `main` says nothing either.
+        // The window goes, and the answer is left where it was: `>` once
+        // answered, `?` when abandoned, since nothing was answered and `main`
+        // says nothing either.
         let answered = step == Step::Submit;
-        render(message, &line, if answered { ">" } else { "?" })?;
+        let text: String = line.chars.iter().collect();
         let mut out = io::stdout().lock();
-        write!(out, "\r\n")?;
+        queue!(
+            out,
+            MoveUp(2),
+            MoveToColumn(0),
+            Clear(ClearType::FromCursorDown),
+            PrintStyledContent(paint(if answered { ">" } else { "?" }, Color::Green)),
+            Print(format!(" {message} {text}\r\n")),
+        )?;
         out.flush()?;
 
         return match answered {
-            true => Ok(line.chars.iter().collect()),
+            true => Ok(text),
             false => Err(Aborted.into()),
         };
     }
 }
 
-/// `? <message> <line>`, the mark in the light green inquire uses for it and
-/// honouring `NO_COLOR` as inquire does, with the cursor where the line says.
-fn render(message: &str, line: &Line, mark: &str) -> Result<()> {
-    let mark = match std::env::var("NO_COLOR") {
-        Ok(_) => mark.stylize(),
-        Err(_) => mark.green(),
-    };
+/// The window the list prompts are drawn in, with a line to type on for
+/// options: a rule, the question, the line, a rule and the keys. The cursor is
+/// left where the line says.
+fn render(message: &str, line: &Line, width: usize, drawn: bool) -> Result<()> {
     let text: String = line.chars.iter().collect();
-    // ponytail: a line wider than the terminal wraps and the cursor then lands
+    let rule = "─".repeat(width);
+    let cut = |text: &str| {
+        text.chars()
+            .take(width.saturating_sub(2))
+            .collect::<String>()
+    };
+    // ponytail: a line wider than the terminal wraps, and the cursor then lands
     // on the wrong row. A scrolling window, if the answers ever get that long.
-    let column = "? ".len() + message.chars().count() + 1 + line.cursor;
+    let column = "> ".len() + line.cursor;
 
     let mut out = io::stdout().lock();
+    if drawn {
+        queue!(out, MoveUp(2))?;
+    }
     queue!(
         out,
         MoveToColumn(0),
-        Clear(ClearType::UntilNewLine),
-        PrintStyledContent(mark),
-        Print(format!(" {message} {text}")),
+        Clear(ClearType::FromCursorDown),
+        PrintStyledContent(paint(&rule, Color::DarkGrey)),
+        Print("\r\n"),
+        PrintStyledContent(paint("│ ", Color::DarkGrey)),
+        PrintStyledContent(cut(message).bold()),
+        Print("\r\n"),
+        PrintStyledContent(paint(">", Color::Cyan)),
+        Print(format!(" {text}\r\n")),
+        PrintStyledContent(paint(&rule, Color::DarkGrey)),
+        Print("\r\n"),
+        PrintStyledContent(paint(&cut(KEYS), Color::DarkGrey)),
+        MoveUp(2),
         MoveToColumn(column as u16),
     )?;
     out.flush()?;
     Ok(())
+}
+
+/// Under a text prompt.
+const KEYS: &str = "Enter to confirm · Esc to cancel";
+
+/// `text` in `color`, honouring `NO_COLOR`, as every prompt here is drawn.
+pub(crate) fn paint(text: &str, color: Color) -> StyledContent<String> {
+    match std::env::var_os("NO_COLOR") {
+        Some(_) => text.to_string().stylize(),
+        None => text.to_string().with(color),
+    }
 }
 
 #[cfg(test)]

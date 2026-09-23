@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use vibestation::fake::{Answer, FakeHost};
 use vibestation::state;
 
-const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{session_name}";
+const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{@note}\t#{session_name}";
 const BRANCH: &str = "git rev-parse --abbrev-ref HEAD";
 const ORIGIN_HEAD: &str = "git symbolic-ref --short refs/remotes/origin/HEAD";
 const CONFIG: &str = "/home/dev/.vibestation/config.toml";
@@ -239,7 +239,7 @@ fn declining_the_offered_name_names_the_work_from_scratch() {
 #[test]
 fn a_project_whose_session_is_running_can_still_start_new_work() {
     let host = absent(host())
-        .succeeds(LIST, "1\t0\t/home/dev/code/notes\tnvim\tada/notes-tidy\n")
+        .succeeds(LIST, "1\t0\t/home/dev/code/notes\tnvim\t\tada/notes-tidy\n")
         .succeeds("/home/dev/code/notes $ git status --porcelain", "")
         .succeeds(
             "/home/dev/code/notes $ git worktree add --no-track -b \

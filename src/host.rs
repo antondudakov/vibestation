@@ -3,6 +3,7 @@
 //! [`crate::fake::FakeHost`] and assert on the commands it emitted and the
 //! files it wrote.
 
+use crate::select::Ask;
 use anyhow::{Context, Result};
 use std::fmt;
 use std::io::ErrorKind;
@@ -66,13 +67,14 @@ pub fn aborted(error: &anyhow::Error) -> bool {
     error.downcast_ref::<Aborted>().is_some()
 }
 
-/// Which of the three keys closed a [`Host::pick`], and on which row.
+/// Which key closed a [`Host::pick`], and on which row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pick {
     Enter(usize),
     /// ← is about the list rather than a row, so it carries none.
     Left,
     Right(usize),
+    Tab(usize),
 }
 
 pub trait Host {
@@ -104,13 +106,22 @@ pub trait Host {
     /// that will not answer is [`FALLBACK_TERMINAL`].
     fn terminal(&self) -> (usize, usize);
 
-    /// Choose one of `options`, returning its index. Typing filters the list.
+    /// Choose one of `options`, returning its index. They are numbered, and a
+    /// digit chooses.
     fn select(&self, message: &str, options: &[String]) -> Result<usize>;
 
-    /// [`Host::select`] with ← and → bound as well, returning which of the
-    /// three keys chose. `help` is the line under the list saying what they
-    /// do here.
-    fn pick(&self, message: &str, options: &[String], help: &str) -> Result<Pick>;
+    /// [`Host::select`] with ← and → bound as well, returning which key
+    /// chose. With `previews`, one per option, it is the picker: typing
+    /// filters, Tab chooses too, and the option under the cursor is previewed
+    /// beside the list. Without, it is a row's menu. `keys` says under the
+    /// list what the extra keys do here.
+    fn pick(
+        &self,
+        message: &str,
+        options: &[String],
+        previews: &[Vec<String>],
+        keys: &str,
+    ) -> Result<Pick>;
 
     /// One transient line — how far a refresh has got — drawn over the last
     /// one; empty clears it.
@@ -208,15 +219,35 @@ impl Host for RealHost {
     }
 
     fn select(&self, message: &str, options: &[String]) -> Result<usize> {
-        match crate::select::choose(message, options, HELP, false, self.terminal())? {
+        let ask = Ask {
+            message,
+            options,
+            ..Ask::default()
+        };
+        match crate::select::choose(&ask, self.terminal())? {
             Pick::Enter(index) => Ok(index),
-            // Unbound, the arrows edit the filter and never close the list.
-            arrow => unreachable!("{arrow:?} from a select without arrows"),
+            // Unbound, the arrows and Tab do nothing and never close the list.
+            key => unreachable!("{key:?} from a select without arrows"),
         }
     }
 
-    fn pick(&self, message: &str, options: &[String], help: &str) -> Result<Pick> {
-        crate::select::choose(message, options, help, true, self.terminal())
+    fn pick(
+        &self,
+        message: &str,
+        options: &[String],
+        previews: &[Vec<String>],
+        keys: &str,
+    ) -> Result<Pick> {
+        let ask = Ask {
+            message,
+            options,
+            previews,
+            keys,
+            filter: !previews.is_empty(),
+            arrows: true,
+            ..Ask::default()
+        };
+        crate::select::choose(&ask, self.terminal())
     }
 
     fn status(&self, line: &str) {
@@ -250,15 +281,19 @@ impl Host for RealHost {
     }
 
     fn input(&self, message: &str, default: &str) -> Result<String> {
-        crate::line::edit(message, default)
+        crate::line::edit(message, default, self.terminal().0)
     }
 
+    /// Yes or no, as a list of two with the cursor on the default.
     fn confirm(&self, message: &str, default: bool) -> Result<bool> {
-        prompt(
-            inquire::Confirm::new(message)
-                .with_default(default)
-                .prompt(),
-        )
+        let options = ["Yes", "No"].map(String::from);
+        let ask = Ask {
+            message,
+            options: &options,
+            cursor: usize::from(!default),
+            ..Ask::default()
+        };
+        Ok(crate::select::choose(&ask, self.terminal())? == Pick::Enter(0))
     }
 
     fn now(&self) -> SystemTime {
@@ -280,18 +315,6 @@ impl Host for RealHost {
 /// What a terminal that will not answer is taken to be. Eighty by
 /// twenty-four is the oldest safe answer and the one every pipe deserves.
 pub const FALLBACK_TERMINAL: (usize, usize) = (80, 24);
-
-/// One line, under every select, saying what the keys do.
-const HELP: &str = "↑↓ move · type to filter · enter select · esc cancel";
-
-/// inquire reports Esc and Ctrl-C as errors; here they are an abort.
-fn prompt<T>(result: inquire::error::InquireResult<T>) -> Result<T> {
-    use inquire::InquireError::{OperationCanceled, OperationInterrupted};
-    match result {
-        Err(OperationCanceled | OperationInterrupted) => Err(Aborted.into()),
-        other => Ok(other?),
-    }
-}
 
 #[cfg(test)]
 mod tests {

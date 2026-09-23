@@ -28,8 +28,8 @@ drops you into it.
 
 Left arrow rescans your projects directories. Right arrow opens a menu for the
 row under the cursor: kill or rename a session, open a project or worktree in
-$EDITOR, remove a worktree or clean up a project's merged ones. The last row
-adds a repository by path.
+$EDITOR, remove a worktree or clean up a project's merged ones. Tab leaves a
+note on a session. The last row adds a repository by path.
 
 Configuration is ~/.vibestation/config.toml, written on first run, which asks
 one question.";
