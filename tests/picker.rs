@@ -70,13 +70,12 @@ fn sessions_come_first_then_projects_with_their_worktrees_beneath() {
             "└  vibestation-VBSN-9                      VBSN-9-fix",
             "   api                 ~/code/api",
             "   notes               ~/notes",
-            "↻  refresh the project list",
             "✚  add a project by path",
         ],
         "a project with a session of its own is still listed below it — the \
          session row resumes that work, the project row starts new work in the \
          same repository — each worktree row carries its branch in the same \
-         column as the sessions above, and the two actions come last"
+         column as the sessions above, and the add action comes last"
     );
 }
 
@@ -96,9 +95,9 @@ fn projects_are_ranked_by_frecency() {
         "rows were {rows:?}"
     );
     assert!(
-        rows[rows.len() - 3].trim_start().starts_with("api"),
+        rows[rows.len() - 2].trim_start().starts_with("api"),
         "the never-opened projects keep their scan order behind it, above the \
-         two action rows: {rows:?}"
+         action row: {rows:?}"
     );
 }
 
@@ -183,7 +182,6 @@ fn no_tmux_server_leaves_a_picker_of_projects_alone() {
             "└  vibestation-VBSN-9                      VBSN-9-fix",
             "   api                 ~/code/api",
             "   notes               ~/notes",
-            "↻  refresh the project list",
             "✚  add a project by path",
         ],
         "a cold start opens the picker rather than erroring, and with no \
@@ -311,9 +309,9 @@ fn the_glyph_says_what_each_row_is() {
 
     assert_eq!(
         glyphs,
-        ['○', '●', '─', ' ', '└', '└', ' ', ' ', '↻', '✚'],
+        ['○', '●', '─', ' ', '└', '└', ' ', ' ', '✚'],
         "detached, attached elsewhere, the separator, a project with its two \
-         worktrees, two more projects, and the two escape hatches — readable \
+         worktrees, two more projects, and the escape hatch — readable \
          at any scroll position"
     );
 }

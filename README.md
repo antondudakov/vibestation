@@ -12,9 +12,8 @@ projects below, and a session waiting at the end of either.
 └  api-VBSN-7-retries                      VBSN-7-retries
    notes               ~/notes
    vibestation         ~/code/vibestation
-↻  refresh the project list
 ✚  add a project by path
-[↑↓ move · type to filter · enter select · esc cancel]
+[↑↓ move · type to filter · enter select · ← refresh · → more · esc cancel]
 ```
 
 Pick a session and you are in it. Pick a project and vibestation names the
@@ -86,11 +85,30 @@ Choosing a session joins it: `switch-client` when you are already inside tmux,
 `attach-session` when you are not. Esc costs nothing and emits nothing, and so
 does the separator — choosing decoration just reopens the list.
 
-The last two rows are the escape hatches. **Refresh** rescans your projects
-directories and rewrites the cache, which is how a repository you just cloned
-appears. **Add a project by path** takes a repository that lives outside those
-directories, refuses anything that is not a git repository, and writes what it
-accepts into your config, so it survives every later refresh.
+**←** refreshes: it rescans your projects directories and rewrites the cache,
+which is how a repository you just cloned appears. A line says which directory
+is being walked, then a bar counts the repositories git is asked about, and the
+list comes back in the same place. The last row, **add a project by path**,
+takes a repository that lives outside those directories, refuses anything that
+is not a git repository, and writes what it accepts into your config, so it
+survives every later refresh.
+
+**→** opens a menu of what else can be done to the row under the cursor. Its
+first entry is what Enter does; ← goes back to the list.
+
+| row | → offers |
+|---|---|
+| session | Join · Kill · Rename |
+| project | New session · Open in your editor · Remove from the list |
+| worktree | New session · Open in your editor · Remove the worktree |
+
+Kill asks first. Rename offers the current name to edit. The editor is
+`$VISUAL`, else `$EDITOR`, else `vi`, started on `.` inside the directory.
+Remove from the list is offered only for a project you added by path, since a
+scanned one would be found again; the repository is not touched. Removing a
+worktree is refused while a session sits in it or its tree has changes —
+untracked files included — and otherwise asks, runs `git worktree remove`
+without `--force`, and leaves the branch where it was.
 
 ## Starting work
 
@@ -124,11 +142,13 @@ an editable default, never applied silently. `.` and `:` become `-`, because
 tmux forbids them in session names; slashes stay, because tmux allows them and
 they carry the convention.
 
-Every text prompt is a line you can edit the way you edit any other line:
-`C-a` and `C-e` for the ends, `C-b` and `C-f` and `M-b` and `M-f` to move,
-`C-w` and `M-d` to kill a word either way, `C-k` and `C-u` to kill to an end,
-`C-d` to delete forward. The arrows, Home and End still work. Esc cancels, and
-an answer offered as a default is there to be edited, never to be retyped.
+Every text prompt is a line you can edit the way you edit any other line, and
+so is the picker's filter: `C-a` and `C-e` for the ends, `C-b` and `C-f` and
+`M-b` and `M-f` to move, `C-w` and `M-d` to kill a word either way, `C-k` and
+`C-u` to kill to an end, `C-d` to delete forward. In a text prompt the arrows,
+Home and End still work; in the picker ← and → are taken, and `C-b` and `C-f`
+do their job. Esc cancels, and an answer offered as a default is there to be
+edited, never to be retyped.
 
 ### The branch
 
@@ -194,8 +214,8 @@ field. Delete any field to get its default back.
 
 Two data files sit beside it. `projects-cache.json` holds the discovered
 projects, so opening the picker never waits on your disk; it is rewritten only
-when you choose refresh, there is no expiry, and a stale list is always one
-keypress from correct. `state.json` holds one open count and timestamp per
+when you press ←, there is no expiry, and a stale list is always one keypress
+from correct. `state.json` holds one open count and timestamp per
 project, which is the frecency ranking. Both are derived data and can be
 deleted at any time.
 
@@ -258,7 +278,8 @@ Released versions come from GitHub Releases and the tap instead.
 See [`CONSTITUTION.md`](CONSTITUTION.md) for the principles this is built to,
 [`specs/001-vibestation-v1.md`](specs/001-vibestation-v1.md) for what v1 is and
 [`specs/001-vibestation-v1/README.md`](specs/001-vibestation-v1/README.md) for
-the thirteen tickets that built it.
+the thirteen tickets that built it, and the later specs beside it for what came
+after.
 
 ## Licence
 

@@ -1,7 +1,7 @@
 //! Finding the developer's repositories: walk the configured roots, merge in
 //! the manually added ones, and remember the result in a JSON cache so that
 //! opening the picker never waits on the disk. Rescanning is explicit: the
-//! picker's refresh action, never a timer.
+//! picker's ←, never a timer.
 
 use crate::config::Config;
 use crate::group::{self, Group, Worktree};
@@ -22,6 +22,16 @@ pub struct Project {
     pub worktrees: Vec<Worktree>,
 }
 
+impl Project {
+    /// The main checkout, or one of its worktrees.
+    pub fn dir(&self, worktree: Option<usize>) -> &Path {
+        match worktree {
+            Some(child) => &self.worktrees[child].path,
+            None => &self.path,
+        }
+    }
+}
+
 pub fn cache_path(host: &dyn Host) -> Result<PathBuf> {
     Ok(host.home()?.join(".vibestation/projects-cache.json"))
 }
@@ -38,8 +48,8 @@ pub fn load_or_scan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
     rescan(host, config)
 }
 
-/// Scan the roots again and rewrite the cache: the picker's refresh action,
-/// and the only thing that ever invalidates the cache.
+/// Scan the roots again and rewrite the cache: the picker's ←, and the only
+/// thing that ever invalidates the cache.
 pub fn rescan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
     let projects = scan(host, config)?;
     let json = serde_json::to_string_pretty(&projects).context("encoding the projects cache")?;
@@ -49,10 +59,13 @@ pub fn rescan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
 
 /// Every repository under the configured roots, plus the manually added ones,
 /// collapsed into projects with their worktrees. Reads the filesystem and asks
-/// git about each repository; never the network.
+/// git about each repository; never the network. Says how far it has got on
+/// the status line, and clears it when done.
 pub fn scan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
     let mut found: Vec<PathBuf> = Vec::new();
     for root in &config.projects_dirs {
+        // One call with no count until it returns, so a name rather than a bar.
+        host.status(&format!("scanning {}…", root.display()));
         // ponytail: the walk returns every directory and the pruning happens
         // here, so a `node_modules` under a repository is still traversed
         // before being discarded. Push a prune predicate into `Host::walk` if
@@ -76,7 +89,9 @@ pub fn scan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
             found.push(extra.clone());
         }
     }
-    Ok(name(group::group(host, &found)?))
+    let groups = group::group(host, &found)?;
+    host.status("");
+    Ok(name(groups))
 }
 
 /// Directory names, disambiguated by their parent where two roots hold the

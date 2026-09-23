@@ -102,6 +102,13 @@ pub fn add_extra(host: &dyn Host, config: &mut Config, project: PathBuf) -> Resu
     host.write_file(&path(host)?, &render(config))
 }
 
+/// Stop listing a manually added repository. The repository itself is not
+/// touched.
+pub fn remove_extra(host: &dyn Host, config: &mut Config, project: &Path) -> Result<()> {
+    config.extra_projects.retain(|extra| extra != project);
+    host.write_file(&path(host)?, &render(config))
+}
+
 /// `git config user.name`, slugified; the home directory's name when git has
 /// no answer, which on any Unix is the login name.
 fn username(host: &dyn Host, home: &Path) -> String {

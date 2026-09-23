@@ -3,7 +3,7 @@
 //! answers, run the application, then assert on the command log and the file
 //! writes. Those two are the tool's entire observable effect on the world.
 
-use crate::host::{Aborted, Host, Output, FALLBACK_TERMINAL};
+use crate::host::{Aborted, Host, Output, Pick, FALLBACK_TERMINAL};
 use anyhow::Result;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -14,8 +14,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 /// application reaches, or the fake panics naming the mismatch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {
-    /// Index into the options offered by [`Host::select`].
+    /// Index into the options offered by [`Host::select`], or Enter on that
+    /// row of a [`Host::pick`].
     Select(usize),
+    /// ← at a [`Host::pick`].
+    Left,
+    /// → on that row of a [`Host::pick`].
+    Right(usize),
     Text(String),
     Confirm(bool),
     /// Esc or Ctrl-C at any prompt.
@@ -36,10 +41,12 @@ pub struct FakeHost {
     home: PathBuf,
     in_tmux: bool,
     terminal: (usize, usize),
+    editor: String,
     log: RefCell<Vec<String>>,
     writes: RefCell<Vec<(PathBuf, String)>>,
     prompts: RefCell<Vec<String>>,
     options: RefCell<Vec<String>>,
+    statuses: RefCell<Vec<String>>,
 }
 
 impl Default for FakeHost {
@@ -58,10 +65,12 @@ impl FakeHost {
             home: PathBuf::from("/home/dev"),
             in_tmux: false,
             terminal: FALLBACK_TERMINAL,
+            editor: "vi".to_string(),
             log: RefCell::new(Vec::new()),
             writes: RefCell::new(Vec::new()),
             prompts: RefCell::new(Vec::new()),
             options: RefCell::new(Vec::new()),
+            statuses: RefCell::new(Vec::new()),
         }
     }
 
@@ -124,6 +133,12 @@ impl FakeHost {
         self
     }
 
+    /// The editor command, `vi` until a test says otherwise.
+    pub fn editor(mut self, editor: &str) -> Self {
+        self.editor = editor.to_string();
+        self
+    }
+
     /// Every command run, in order, in the same form as the scripting keys.
     pub fn log(&self) -> Vec<String> {
         self.log.borrow().clone()
@@ -146,10 +161,16 @@ impl FakeHost {
         self.prompts.borrow().clone()
     }
 
-    /// The options offered at the last [`Host::select`] — the picker's rows as
-    /// the developer would have seen them.
+    /// The options offered at the last [`Host::select`] or [`Host::pick`] —
+    /// the picker's rows, or a row's menu, as the developer would have seen
+    /// them.
     pub fn options(&self) -> Vec<String> {
         self.options.borrow().clone()
+    }
+
+    /// Every status line drawn, in order, the empty one that clears included.
+    pub fn statuses(&self) -> Vec<String> {
+        self.statuses.borrow().clone()
     }
 
     fn key(argv: &[&str], cwd: Option<&Path>) -> String {
@@ -229,10 +250,10 @@ impl Host for FakeHost {
             .collect())
     }
 
-    fn exec(&self, argv: &[&str]) -> Result<()> {
+    fn exec(&self, argv: &[&str], cwd: Option<&Path>) -> Result<()> {
         // The real host never returns from this; the fake records it and lets
         // the test see that it was the last thing emitted.
-        self.log.borrow_mut().push(FakeHost::key(argv, None));
+        self.log.borrow_mut().push(FakeHost::key(argv, cwd));
         Ok(())
     }
 
@@ -252,6 +273,31 @@ impl Host for FakeHost {
             }
             other => panic!("prompt {message:?} is a select, but the next answer is {other:?}"),
         }
+    }
+
+    fn pick(&self, message: &str, options: &[String], _help: &str) -> Result<Pick> {
+        *self.options.borrow_mut() = options.to_vec();
+        let in_range = |index: usize| {
+            assert!(
+                index < options.len(),
+                "scripted row {index} is out of range for {options:?}"
+            );
+            index
+        };
+        match self.next_answer(message)? {
+            Answer::Select(index) => Ok(Pick::Enter(in_range(index))),
+            Answer::Right(index) => Ok(Pick::Right(in_range(index))),
+            Answer::Left => Ok(Pick::Left),
+            other => panic!("prompt {message:?} is a pick, but the next answer is {other:?}"),
+        }
+    }
+
+    fn status(&self, line: &str) {
+        self.statuses.borrow_mut().push(line.to_string());
+    }
+
+    fn editor(&self) -> String {
+        self.editor.clone()
     }
 
     fn input(&self, message: &str, default: &str) -> Result<String> {
