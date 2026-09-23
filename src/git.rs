@@ -1,6 +1,6 @@
-//! Reading and changing git state. Everything here is local except [`fetch`],
-//! the one network call constitution §3 allows: opt-in, immediately before a
-//! branch is cut, and never fatal.
+//! Reading and changing git state. Everything here is local except [`fetch`]
+//! and [`populate`], the network calls constitution §3 allows: on either side
+//! of cutting a branch, and never fatal.
 
 use crate::config::Config;
 use crate::host::{Host, Output};
@@ -109,4 +109,35 @@ pub fn add_worktree(
             out.stderr.trim()
         )),
     }
+}
+
+/// Bring a checkout a branch was just cut into up to what the branch records.
+/// Neither `git worktree add` nor `git checkout` touches submodules, so a new
+/// worktree starts with them empty; `--init` because a submodule's own
+/// submodules start uninitialised in every fresh clone. In a repository that
+/// uses LFS the files are pulled too: a checkout that skipped the smudge
+/// filter left pointers where they belong, and one that ran it has nothing
+/// left to fetch.
+///
+/// Both can reach the network, so neither is fatal: what failed is returned
+/// for a warning, and the work goes on without it.
+pub fn populate(host: &dyn Host, path: &Path) -> Result<Vec<String>> {
+    // ponytail: the root .gitattributes only; ask `git lfs ls-files` if a
+    // repository turns up that tracks LFS from a nested one.
+    let lfs = host
+        .read_file(&path.join(".gitattributes"))?
+        .is_some_and(|attributes| attributes.contains("filter=lfs"));
+    let mut steps: Vec<&[&str]> = vec![&["git", "submodule", "update", "--init", "--recursive"]];
+    if lfs {
+        steps.push(&["git", "lfs", "pull"]);
+    }
+
+    let mut failed = Vec::new();
+    for argv in steps {
+        let out = host.run(argv, Some(path))?;
+        if !out.succeeded() {
+            failed.push(format!("{} failed ({})", argv.join(" "), out.stderr.trim()));
+        }
+    }
+    Ok(failed)
 }

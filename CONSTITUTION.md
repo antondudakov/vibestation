@@ -24,15 +24,18 @@ tests. Library bindings add build complexity and a second source of truth.
 ## 3. No network on the hot path
 
 Opening the picker never touches the network, and neither does attaching to a
-session or creating one. The single exception is an explicit, confirmable
-`git fetch` immediately before creating a branch — the one moment where being
-current is the entire point. It is opt-in, it never sits on the path to an
-existing session, and a failed fetch degrades to the local ref with a warning
-rather than blocking the work.
+session or creating one. The exceptions sit on either side of cutting a branch —
+the one moment where being current is the entire point. Before the cut, an
+explicit, confirmable `git fetch`. After it, the submodules and LFS files the
+new checkout records, which a checkout is not workable without. None of them
+sits on the path to an existing session, and none is fatal: a failed fetch
+degrades to the local ref, a failed submodule update or LFS pull to a checkout
+without them, each with a warning rather than blocking the work.
 
 **Why:** a session switcher that stalls on a flaky VPN is worse than no session
 switcher. Branching off a stale default branch is a different and worse problem,
-so that one path pays for the network call — visibly, and never fatally.
+and so is a worktree with holes where its submodules should be, so that one
+path pays for the network — and never fatally.
 
 ## 4. Never mutate a dirty working tree
 

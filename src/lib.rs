@@ -139,7 +139,8 @@ fn ask(host: &dyn Host, config: &Config) -> Result<String> {
 
 /// Offer the branch the session was just named for: a new worktree beside the
 /// checkout, in place in it, or neither. Returns the directory the work now
-/// lives in — the worktree, or the checkout for the other two.
+/// lives in — the worktree, or the checkout for the other two — with a cut
+/// branch's submodules and LFS files brought in.
 ///
 /// The worktree leads because it alters no existing checkout and so is always
 /// safe; a dirty tree withholds the in-place option rather than offering one
@@ -183,10 +184,14 @@ fn branch_for(
     }
 
     let base = base_ref(host, config, main, default)?;
-    match choice {
+    let dir = match choice {
         0 => git::add_worktree(host, main, &worktree, name, &base).map(|()| worktree),
         _ => git::create_branch(host, main, name, &base).map(|()| main.to_path_buf()),
+    }?;
+    for failed in git::populate(host, &dir)? {
+        println!("{failed}; run it in {} to finish", dir.display());
     }
+    Ok(dir)
 }
 
 /// The ref a new branch is cut from: `origin/<default>` when the offered fetch
