@@ -10,6 +10,7 @@ const ORIGIN_HEAD: &str = "/home/dev/code/api $ git symbolic-ref --short refs/re
 const MAIN: &str = "/home/dev/code/api $ git rev-parse --verify --quiet refs/heads/main";
 const STATUS: &str = "/home/dev/code/api $ git status --porcelain";
 const FETCH: &str = "/home/dev/code/api $ git fetch origin";
+const SUBMODULES: &str = "git submodule update --init --recursive";
 const SESSION: &str = "tmux new-session -d -s ada/VBSN-4-tidy -c /home/dev/code/api";
 const CONFIG: &str = "/home/dev/.vibestation/config.toml";
 const CACHE: &str = "/home/dev/.vibestation/projects-cache.json";
@@ -31,6 +32,9 @@ fn host(config: &str) -> FakeHost {
         )
         .succeeds(SESSION, "")
         .succeeds(STATUS, "")
+        // Wherever the branch lands: a repository without submodules says
+        // nothing and succeeds.
+        .succeeds(SUBMODULES, "")
 }
 
 /// The default config, nothing configured beyond the first-run question.
@@ -167,9 +171,13 @@ fn accepting_the_fetch_cuts_from_the_remote_ref_and_touches_no_local_one() {
         "the fetch confirmation follows the strategy choice, pre-answered \
          from fetch_before_branch"
     );
+    let log = git(&host);
     assert_eq!(
-        git(&host).last().unwrap(),
-        "/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy origin/main",
+        log[log.len() - 2..],
+        [
+            "/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy origin/main",
+            &format!("/home/dev/code/api $ {SUBMODULES}"),
+        ],
         "cut from the remote ref, and tracking none of it: an upstream of \
          origin/main would point the new branch's push at the default branch"
     );
@@ -377,11 +385,16 @@ fn the_worktree_is_the_pre_selected_option_and_lands_beside_the_checkout() {
         "the always-safe option is the one keypress choice, and the directory \
          is the project name joined to the branch without its username prefix"
     );
+    let log = git(&host);
     assert_eq!(
-        git(&host).last().unwrap(),
-        "/home/dev/code/api $ git worktree add --no-track -b ada/VBSN-4-tidy \
-         /home/dev/code/api-VBSN-4-tidy origin/main",
-        "branch and worktree are one operation, cut from the fetched ref"
+        log[log.len() - 2..],
+        [
+            "/home/dev/code/api $ git worktree add --no-track -b ada/VBSN-4-tidy \
+             /home/dev/code/api-VBSN-4-tidy origin/main",
+            &format!("/home/dev/code/api-VBSN-4-tidy $ {SUBMODULES}"),
+        ],
+        "branch and worktree are one operation, cut from the fetched ref, and \
+         the submodules the add left empty are checked out in the worktree"
     );
     assert_eq!(
         host.log().last().unwrap(),
@@ -457,5 +470,50 @@ fn a_path_occupied_by_anything_else_stops_the_operation() {
     assert!(
         !host.log().iter().any(|c| c.starts_with("tmux new-session")),
         "and no session is created over it"
+    );
+}
+
+#[test]
+fn submodules_and_lfs_files_that_cannot_be_fetched_warn_rather_than_stop_the_work() {
+    let host = choosing(
+        detected()
+            .file(
+                "/home/dev/code/api/.gitattributes",
+                "*.psd filter=lfs diff=lfs merge=lfs -text\n",
+            )
+            .succeeds(
+                "/home/dev/code/api $ git checkout --no-track -b ada/VBSN-4-tidy main",
+                "",
+            )
+            .fails(
+                &format!("/home/dev/code/api $ {SUBMODULES}"),
+                1,
+                "fatal: unable to access 'https://github.com/ada/lib/': \
+                 Could not resolve host: github.com",
+            )
+            .fails(
+                "/home/dev/code/api $ git lfs pull",
+                2,
+                "batch request: Could not resolve host: github.com",
+            ),
+        [Answer::Select(1), Answer::Confirm(false)],
+    );
+
+    vibestation::run(&host).unwrap();
+
+    let log = git(&host);
+    assert_eq!(
+        log[log.len() - 2..],
+        [
+            &format!("/home/dev/code/api $ {SUBMODULES}"),
+            "/home/dev/code/api $ git lfs pull",
+        ],
+        "a repository whose attributes use LFS has its files pulled after the \
+         cut, and a failed submodule update does not skip it"
+    );
+    assert_eq!(
+        host.log().last().unwrap(),
+        "tmux attach-session -t ada/VBSN-4-tidy",
+        "offline is not a reason to stop working"
     );
 }
