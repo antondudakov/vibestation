@@ -5,7 +5,7 @@
 use vibestation::fake::{Answer, FakeHost};
 use vibestation::host::aborted;
 
-const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{session_name}";
+const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{@note}\t#{session_name}";
 const BRANCH: &str = "git rev-parse --abbrev-ref HEAD";
 const DISPLAY: &str = "tmux display-message -p #{session_name}";
 const CONFIG: &str = "/home/dev/.vibestation/config.toml";
@@ -35,8 +35,8 @@ fn host() -> FakeHost {
         )
         .succeeds(
             LIST,
-            "0\t0\t/home/dev/code/vibestation\tnvim\tada/VBSN-4-picker\n\
-             1\t0\t/etc\tzsh\tnotes-scratch\n",
+            "0\t0\t/home/dev/code/vibestation\tnvim\t\tada/VBSN-4-picker\n\
+             1\t0\t/etc\tzsh\t\tnotes-scratch\n",
         )
         .succeeds(
             &format!("/home/dev/code/vibestation $ {BRANCH}"),
@@ -235,7 +235,7 @@ fn long() -> FakeHost {
         )
         .succeeds(
             LIST,
-            "0\t0\t/home/dev/projects/sports/android-monorepo-3\tclaude\tandroid3 | Ana input everywhere\n",
+            "0\t0\t/home/dev/projects/sports/android-monorepo-3\tclaude\t\tandroid3 | Ana input everywhere\n",
         )
         .succeeds(
             "/home/dev/projects/sports/android-monorepo-3 $ git rev-parse --abbrev-ref HEAD",
@@ -278,7 +278,7 @@ fn your_own_prefix_comes_off_a_branch_and_another_owners_stays() {
     let host = host()
         .succeeds(
             LIST,
-            "0\t0\t/home/dev/code/vibestation\tnvim\tmine\n1\t0\t/home/dev/notes\tzsh\ttheirs\n",
+            "0\t0\t/home/dev/code/vibestation\tnvim\t\tmine\n1\t0\t/home/dev/notes\tzsh\t\ttheirs\n",
         )
         .succeeds(
             &format!("/home/dev/notes $ {BRANCH}"),
@@ -349,8 +349,8 @@ fn the_session_you_are_in_leads_the_list_and_says_how_long_it_has_been() {
         .in_tmux(true)
         .succeeds(
             LIST,
-            "1\t1699996400\t/home/dev/code/vibestation\tnvim\tada/VBSN-4-picker\n\
-             1\t0\t/etc\tzsh\tnotes-scratch\n",
+            "1\t1699996400\t/home/dev/code/vibestation\tnvim\t\tada/VBSN-4-picker\n\
+             1\t0\t/etc\tzsh\t\tnotes-scratch\n",
         )
         .succeeds(
             "tmux display-message -p #{session_name}",

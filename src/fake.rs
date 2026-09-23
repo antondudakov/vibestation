@@ -21,6 +21,8 @@ pub enum Answer {
     Left,
     /// → on that row of a [`Host::pick`].
     Right(usize),
+    /// Tab on that row of a [`Host::pick`].
+    Tab(usize),
     Text(String),
     Confirm(bool),
     /// Esc or Ctrl-C at any prompt.
@@ -46,6 +48,7 @@ pub struct FakeHost {
     writes: RefCell<Vec<(PathBuf, String)>>,
     prompts: RefCell<Vec<String>>,
     options: RefCell<Vec<String>>,
+    previews: RefCell<Vec<Vec<String>>>,
     statuses: RefCell<Vec<String>>,
 }
 
@@ -70,6 +73,7 @@ impl FakeHost {
             writes: RefCell::new(Vec::new()),
             prompts: RefCell::new(Vec::new()),
             options: RefCell::new(Vec::new()),
+            previews: RefCell::new(Vec::new()),
             statuses: RefCell::new(Vec::new()),
         }
     }
@@ -166,6 +170,12 @@ impl FakeHost {
     /// them.
     pub fn options(&self) -> Vec<String> {
         self.options.borrow().clone()
+    }
+
+    /// The panels offered beside the options at the last [`Host::pick`], one
+    /// per option; none for a menu.
+    pub fn previews(&self) -> Vec<Vec<String>> {
+        self.previews.borrow().clone()
     }
 
     /// Every status line drawn, in order, the empty one that clears included.
@@ -275,8 +285,15 @@ impl Host for FakeHost {
         }
     }
 
-    fn pick(&self, message: &str, options: &[String], _help: &str) -> Result<Pick> {
+    fn pick(
+        &self,
+        message: &str,
+        options: &[String],
+        previews: &[Vec<String>],
+        _keys: &str,
+    ) -> Result<Pick> {
         *self.options.borrow_mut() = options.to_vec();
+        *self.previews.borrow_mut() = previews.to_vec();
         let in_range = |index: usize| {
             assert!(
                 index < options.len(),
@@ -287,6 +304,7 @@ impl Host for FakeHost {
         match self.next_answer(message)? {
             Answer::Select(index) => Ok(Pick::Enter(in_range(index))),
             Answer::Right(index) => Ok(Pick::Right(in_range(index))),
+            Answer::Tab(index) => Ok(Pick::Tab(in_range(index))),
             Answer::Left => Ok(Pick::Left),
             other => panic!("prompt {message:?} is a pick, but the next answer is {other:?}"),
         }

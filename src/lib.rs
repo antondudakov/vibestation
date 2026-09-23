@@ -19,11 +19,11 @@ use scan::Project;
 use std::path::{Path, PathBuf};
 use tmux::Session;
 
-/// What ← and → do in the picker, under it.
-const KEYS: &str = "↑↓ move · type to filter · enter select · ← refresh · → more · esc cancel";
+/// What ←, → and Tab do in the picker, under it.
+const KEYS: &str = "← to refresh · → for more · Tab to add notes";
 
-/// And in a row's menu.
-const MENU_KEYS: &str = "↑↓ move · enter select · ← back · esc cancel";
+/// And ← in a row's menu.
+const MENU_KEYS: &str = "← to go back";
 
 /// What can be done to a row. Indexes are into the lists the picker was
 /// built from, as a [`Row`]'s are.
@@ -32,6 +32,7 @@ enum Action {
     Join(usize),
     Kill(usize),
     Rename(usize),
+    Note(usize),
     /// A project, or one of its worktrees.
     Start(usize, Option<usize>),
     Edit(usize, Option<usize>),
@@ -62,27 +63,35 @@ pub fn run(host: &dyn Host) -> Result<()> {
     loop {
         // Cloned because most actions reopen the picker over the same list.
         let projects = state::rank(found.clone(), &opens, host.now());
-        let rows = picker::rows(
-            &sessions,
-            &projects,
-            &home,
-            &config.username,
-            host.terminal().0,
-        );
+        // The grid gives the preview panel its share of the terminal.
+        let (list, panel) = select::split(host.terminal().0);
+        let rows = picker::rows(&sessions, &projects, &home, &config.username, list);
         let labels: Vec<String> = rows.iter().map(|(_, label)| label.clone()).collect();
+        let menus: Vec<_> = rows
+            .iter()
+            .map(|(row, _)| actions(host, *row, &sessions, &projects, &config))
+            .collect();
+        let previews: Vec<Vec<String>> = rows
+            .iter()
+            .zip(&menus)
+            .map(|((row, _), (_, offered))| {
+                let offered: Vec<&str> = offered.iter().map(|(_, label)| label.as_str()).collect();
+                picker::preview(*row, &sessions, &projects, &home, &offered, panel)
+            })
+            .collect();
 
-        let chosen = match host.pick(&picker::title(&rows), &labels, KEYS)? {
+        let chosen = match host.pick(&picker::title(&rows), &labels, &previews, KEYS)? {
             Pick::Left => Some(Action::Rescan),
-            Pick::Enter(index) => actions(host, rows[index].0, &sessions, &projects, &config)
-                .1
-                .first()
-                .map(|(action, _)| *action),
-            Pick::Right(index) => more(
-                host,
-                actions(host, rows[index].0, &sessions, &projects, &config),
-            )?,
+            Pick::Enter(index) => menus[index].1.first().map(|(action, _)| *action),
+            Pick::Right(index) => more(host, &menus[index])?,
+            // Only a session holds a note: it is where the work is going on.
+            Pick::Tab(index) => match rows[index].0 {
+                Row::Session(index) => Some(Action::Note(index)),
+                _ => None,
+            },
         };
-        // The separator, or ← back out of a menu: the list comes back as it was.
+        // The separator, Tab where there is no note to take, or ← back out of
+        // a menu: the list comes back as it was.
         let Some(action) = chosen else { continue };
 
         match action {
@@ -105,6 +114,12 @@ pub fn run(host: &dyn Host) -> Result<()> {
                     }
                     sessions = tmux::list(host)?;
                 }
+            }
+            Action::Note(index) => {
+                let session = &sessions[index];
+                let note = host.input(&format!("Note for {}", session.name), &session.note)?;
+                tmux::note(host, &session.name, &note)?;
+                sessions = tmux::list(host)?;
             }
             Action::Start(index, child) => {
                 return open(host, &config, &sessions, &projects[index], child)
@@ -212,14 +227,14 @@ fn actions(
 /// does. ← goes back to the list, which is `None`.
 fn more(
     host: &dyn Host,
-    (title, offered): (String, Vec<(Action, String)>),
+    (title, offered): &(String, Vec<(Action, String)>),
 ) -> Result<Option<Action>> {
     if offered.len() < 2 {
         return Ok(None);
     }
     let labels: Vec<String> = offered.iter().map(|(_, label)| label.clone()).collect();
-    Ok(match host.pick(&title, &labels, MENU_KEYS)? {
-        Pick::Left => None,
+    Ok(match host.pick(title, &labels, &[], MENU_KEYS)? {
+        Pick::Left | Pick::Tab(_) => None,
         Pick::Enter(index) | Pick::Right(index) => Some(offered[index].0),
     })
 }

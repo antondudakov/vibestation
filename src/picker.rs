@@ -138,6 +138,82 @@ pub fn title(rows: &[(Row, String)]) -> String {
     }
 }
 
+/// The panel beside a row, `width` wide: the row in full, where the grid had
+/// to cut it, then what → offers, then a session's note. A path gives up its
+/// front to fit, as it does in the grid; anything else too long is wrapped.
+pub fn preview(
+    row: Row,
+    sessions: &[Session],
+    projects: &[Project],
+    home: &Path,
+    offered: &[&str],
+    width: usize,
+) -> Vec<String> {
+    let field = |key: &str, value: &str| format!("{key:<8}{value}");
+    let dir = |path: &Path| {
+        let path = abbreviate(&path.to_string_lossy(), home);
+        field("dir", &elide(&path, width.saturating_sub(8)))
+    };
+
+    let mut lines = match row {
+        Row::Session(index) => {
+            let session = &sessions[index];
+            let mut lines = vec![session.name.clone(), dir(&session.path)];
+            if !session.branch.is_empty() {
+                lines.push(field("branch", &session.branch));
+            }
+            lines.push(field("running", &session.command));
+            match session.age.as_str() {
+                "" => {}
+                "now" => lines.push(field("seen", "just now")),
+                age => lines.push(field("seen", &format!("{age} ago"))),
+            }
+            lines
+        }
+        Row::Project(index) => {
+            let project = &projects[index];
+            let mut lines = vec![project.name.clone(), dir(&project.path)];
+            match project.worktrees.len() {
+                0 => {}
+                1 => lines.push("1 worktree".to_string()),
+                many => lines.push(format!("{many} worktrees")),
+            }
+            lines
+        }
+        Row::Worktree(index, child) => {
+            let worktree = &projects[index].worktrees[child];
+            vec![
+                base(&worktree.path),
+                dir(&worktree.path),
+                field("branch", &worktree.branch),
+                field("of", &projects[index].name),
+            ]
+        }
+        Row::Separator => return Vec::new(),
+        Row::AddManually => {
+            return vec![
+                "Add a project by path".to_string(),
+                String::new(),
+                "A repository outside your projects directories, kept in your config.".to_string(),
+            ]
+        }
+    };
+
+    // → only opens a menu when there is more than Enter's one thing to do.
+    if offered.len() > 1 {
+        lines.push(String::new());
+        lines.push(format!("→ {}", offered.join(" · ")));
+    }
+    if let Row::Session(index) = row {
+        lines.push(String::new());
+        lines.push(match sessions[index].note.as_str() {
+            "" => "Notes: press Tab to add notes".to_string(),
+            note => format!("Notes: {note}"),
+        });
+    }
+    lines
+}
+
 fn cells(fields: &[&str; COLUMNS]) -> Cells {
     (*fields).map(str::to_string)
 }

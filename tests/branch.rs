@@ -4,7 +4,7 @@
 
 use vibestation::fake::{Answer, FakeHost};
 
-const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{session_name}";
+const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{@note}\t#{session_name}";
 const BRANCH: &str = "/home/dev/code/api $ git rev-parse --abbrev-ref HEAD";
 const ORIGIN_HEAD: &str = "/home/dev/code/api $ git symbolic-ref --short refs/remotes/origin/HEAD";
 const MAIN: &str = "/home/dev/code/api $ git rev-parse --verify --quiet refs/heads/main";
@@ -309,7 +309,7 @@ fn nothing_is_fetched_on_the_path_to_an_existing_session() {
             "projects_dirs = [\"/home/dev/code\"]\nusername = \"ada\"\n",
         )
         .file(CACHE, r#"[]"#)
-        .succeeds(LIST, "0\t0\t/home/dev/code/api\tnvim\tada/VBSN-4-tidy\n")
+        .succeeds(LIST, "0\t0\t/home/dev/code/api\tnvim\t\tada/VBSN-4-tidy\n")
         .succeeds(BRANCH, "ada/VBSN-4-tidy\n")
         .answer(Answer::Select(0));
 

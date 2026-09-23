@@ -4,16 +4,22 @@ One command, one fuzzy picker: your live tmux sessions on top, your git
 projects below, and a session waiting at the end of either.
 
 ```
-? Open  2 running · 3 projects
-▶  ada/VBSN-4-picker   ~/code/vibestation  VBSN-4-picker   nvim  2m
-●  notes-scratch       /etc                                zsh   1h
-───────────────────────────────────────────────────────────────────
-   api                 ~/code/api
-└  api-VBSN-7-retries                      VBSN-7-retries
-   notes               ~/notes
-   vibestation         ~/code/vibestation
-✚  add a project by path
-[↑↓ move · type to filter · enter select · ← refresh · → more · esc cancel]
+──────────────────────────────────────────────────────────────────────────────────────────────────────
+│ Open  2 running · 3 projects  type to filter
+
+❯ ▶  ada/VBSN-4-picker   ~/code/vibestation  VBSN-4-picker  nvim  2m   ┌──────────────────────────────┐
+  ●  notes-scratch       /etc                               zsh   1h   │ ada/VBSN-4-picker            │
+  ─────────────────────────────────────────────────────────────────    │ dir     ~/code/vibestation   │
+     api                 ~/code/api                                    │ branch  ada/VBSN-4-picker    │
+  └  api-VBSN-7-retries                      VBSN-7-retries            │ running nvim                 │
+     notes               ~/notes                                       │ seen    2m ago               │
+     vibestation         ~/code/vibestation                            │                              │
+  ✚  add a project by path                                             │ → Join · Kill · Rename       │
+                                                                       │                              │
+                                                                       │ Notes: fixing the arrows     │
+                                                                       └──────────────────────────────┘
+──────────────────────────────────────────────────────────────────────────────────────────────────────
+Enter to select · ↑/↓ to navigate · type to filter · ← to refresh · → for more · Tab to add notes · Esc to cancel
 ```
 
 Pick a session and you are in it. Pick a project and vibestation names the
@@ -85,6 +91,20 @@ Choosing a session joins it: `switch-client` when you are already inside tmux,
 `attach-session` when you are not. Esc costs nothing and emits nothing, and so
 does the separator — choosing decoration just reopens the list.
 
+Every prompt is drawn in the same window, the one Claude Code asks its
+questions in: a rule, the question, the options with `❯` on the one under the
+cursor, a rule, and a line saying what the keys do. On a terminal 100 columns
+or wider, the picker gives a third of it to a panel previewing the row under
+the cursor: everything the grid had to cut, in full, what → offers it, and a
+session's note. Narrower, the grid keeps every column and there is no panel.
+
+**Tab** leaves a note on a session — what you were in the middle of, what it is
+waiting on — offering the one it has to edit. The note lives on the session
+itself, as a tmux user option, `@note`: it follows a rename, goes with a kill,
+and costs the picker nothing to read, since it comes back in the same
+`list-sessions` call. An emptied note is taken off. Tab on any other row does
+nothing.
+
 **←** refreshes: it rescans your projects directories and rewrites the cache,
 which is how a repository you just cloned appears. A line says which directory
 is being walked, then a bar counts the repositories git is asked about, and the
@@ -94,7 +114,11 @@ is not a git repository, and writes what it accepts into your config, so it
 survives every later refresh.
 
 **→** opens a menu of what else can be done to the row under the cursor. Its
-first entry is what Enter does; ← goes back to the list.
+first entry is what Enter does; ← goes back to the list. A menu's options are
+numbered, and a digit chooses — as it does at the branch question, and at every
+yes or no, which is a list of two with the cursor on the default. A letter
+moves to the one option it starts, for Enter to take, so `y` Enter and `n`
+Enter answer as they always have.
 
 | row | → offers |
 |---|---|

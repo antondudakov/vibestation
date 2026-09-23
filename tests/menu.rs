@@ -3,7 +3,7 @@
 
 use vibestation::fake::{Answer, FakeHost};
 
-const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{session_name}";
+const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{@note}\t#{session_name}";
 const BRANCH: &str = "git rev-parse --abbrev-ref HEAD";
 const STATUS: &str = "git status --porcelain";
 const CONFIG: &str = "/home/dev/.vibestation/config.toml";
@@ -40,7 +40,7 @@ fn host() -> FakeHost {
         .file("/home/dev/vendor/tool/.git/HEAD", "")
         .succeeds(
             LIST,
-            "0\t0\t/home/dev/code/api-VBSN-2/src\tnvim\tada/VBSN-2-busy\n",
+            "0\t0\t/home/dev/code/api-VBSN-2/src\tnvim\t\tada/VBSN-2-busy\n",
         )
         .succeeds(
             &format!("/home/dev/code/api-VBSN-2/src $ {BRANCH}"),
@@ -178,6 +178,105 @@ fn a_rename_tmux_refuses_leaves_the_picker_open() {
     assert_eq!(
         host.prompts().last().unwrap(),
         "Open  1 running · 2 projects"
+    );
+}
+
+#[test]
+fn tab_on_a_session_offers_its_note_to_edit_and_tmux_keeps_it() {
+    let host = host()
+        .succeeds(
+            "tmux set-option -t ada/VBSN-2-busy @note fixing the arrows",
+            "",
+        )
+        .answers([
+            Answer::Tab(0),
+            Answer::text("  fixing\tthe  arrows "),
+            Answer::Abort,
+        ]);
+
+    drive(&host);
+
+    assert_eq!(host.prompts()[1], "Note for ada/VBSN-2-busy []");
+    assert!(
+        ran(
+            &host,
+            "tmux set-option -t ada/VBSN-2-busy @note fixing the arrows"
+        ),
+        "one line, so it comes back as one field: {:?}",
+        host.log()
+    );
+    assert_eq!(
+        host.log().iter().filter(|logged| **logged == LIST).count(),
+        2,
+        "and the sessions are read again to show it"
+    );
+}
+
+#[test]
+fn an_emptied_note_is_taken_off_and_tab_elsewhere_does_nothing() {
+    let host = host()
+        .succeeds("tmux set-option -u -t ada/VBSN-2-busy @note", "")
+        .answers([
+            Answer::Tab(2),
+            Answer::Tab(0),
+            Answer::text(" "),
+            Answer::Abort,
+        ]);
+
+    drive(&host);
+
+    assert_eq!(
+        host.prompts()[..3],
+        [
+            "Open  1 running · 2 projects",
+            "Open  1 running · 2 projects",
+            "Note for ada/VBSN-2-busy []",
+        ],
+        "Tab on a project reopens the list: only a session holds a note"
+    );
+    assert!(ran(&host, "tmux set-option -u -t ada/VBSN-2-busy @note"));
+}
+
+#[test]
+fn the_row_under_the_cursor_is_previewed_in_full_with_its_note() {
+    let host = host()
+        .terminal(120, 40)
+        .succeeds(
+            LIST,
+            "0\t0\t/home/dev/code/api-VBSN-2/src\tnvim\tfixing the arrows\tada/VBSN-2-busy\n",
+        )
+        .answer(Answer::Abort);
+
+    drive(&host);
+    let previews = host.previews();
+
+    assert_eq!(
+        previews[0],
+        [
+            "ada/VBSN-2-busy",
+            "dir     ~/code/api-VBSN-2/src",
+            "branch  ada/VBSN-2-busy",
+            "running nvim",
+            "",
+            "→ Join · Kill · Rename",
+            "",
+            "Notes: fixing the arrows",
+        ]
+    );
+    assert!(previews[1].is_empty(), "the separator has nothing to show");
+    assert_eq!(
+        previews[4][..4],
+        [
+            "api-VBSN-2",
+            "dir     ~/code/api-VBSN-2",
+            "branch  ada/VBSN-2-busy",
+            "of      api",
+        ]
+    );
+    assert!(
+        host.options().iter().all(|row| row.chars().count() <= 78),
+        "the grid gives the panel its third of the terminal: {:?}",
+        host.options()
     );
 }
 

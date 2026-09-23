@@ -1,32 +1,50 @@
-//! The list prompt: inquire's select, owned, so that ← and → can mean
-//! something.
+//! Every list prompt, drawn as the window Claude Code asks its questions in: a
+//! rule, the question, the options with `❯` on the one under the cursor and a
+//! panel beside them previewing it, a rule, and the keys.
 //!
-//! inquire's select hands every key it does not bind to its filter line, from
-//! a hardcoded match with no hook, so ← and → can only ever move a cursor
-//! through the three characters you typed — the wall [`crate::line`] exists
-//! for, met again. The filter line here is that module's line, so it edits the
-//! way every other prompt does; the list, the paging and inquire's scorer are
-//! this module's.
+//! Two kinds of list. The picker filters as you type, on [`crate::line`]'s
+//! line and skim's scorer, since a ticket number is how you reach a worktree.
+//! Everything else — a row's menu, the branch question, yes or no — is a
+//! handful of options, so they are numbered and a digit chooses.
 //!
-//! A pure [`apply`] holds every binding and no I/O; the loop around it only
-//! reads keys and redraws.
+//! A pure [`apply`] holds every binding and a pure [`frame`] every line drawn;
+//! the loop around them only reads keys and prints.
 
 use crate::host::{Aborted, Pick};
-use crate::line::{self, Line};
+use crate::line::{self, paint, Line};
 use anyhow::Result;
-use crossterm::cursor::{MoveToColumn, MoveUp};
+use crossterm::cursor::{Hide, MoveToColumn, MoveUp, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::queue;
 use crossterm::style::{Color, Print, PrintStyledContent, StyledContent, Stylize};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
+use crossterm::{execute, queue};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use std::cmp::Reverse;
 use std::io::{self, Write};
 
+/// A list, as the host asks for one.
+#[derive(Default)]
+pub struct Ask<'a> {
+    pub message: &'a str,
+    pub options: &'a [String],
+    /// Beside the list, a panel for the option under the cursor. Empty for no
+    /// panel, as is any one option's.
+    pub previews: &'a [Vec<String>],
+    /// The keys this list binds beyond those every list does, for the line
+    /// under it.
+    pub keys: &'a str,
+    /// Typing filters and Tab chooses. Otherwise the options are numbered.
+    pub filter: bool,
+    /// ← and → choose.
+    pub arrows: bool,
+    /// The option the cursor starts on.
+    pub cursor: usize,
+}
+
 /// The list as the keys have left it.
 struct List<'a> {
-    options: &'a [String],
+    ask: &'a Ask<'a>,
     filter: Line,
     /// What the filter lets through, best match first, as indexes into
     /// `options`.
@@ -37,13 +55,13 @@ struct List<'a> {
 }
 
 impl<'a> List<'a> {
-    fn new(options: &'a [String]) -> Self {
+    fn new(ask: &'a Ask<'a>) -> Self {
         List {
-            options,
+            ask,
             filter: Line::default(),
-            shown: (0..options.len()).collect(),
-            cursor: 0,
-            // inquire's own scorer, so a filter finds what it found before.
+            shown: (0..ask.options.len()).collect(),
+            cursor: ask.cursor.min(ask.options.len().saturating_sub(1)),
+            // inquire's scorer, so a filter finds what it always found.
             matcher: SkimMatcherV2::default().ignore_case(),
         }
     }
@@ -54,10 +72,11 @@ impl<'a> List<'a> {
 
     /// Score every option against the filter. Ties keep list order — the list
     /// is ranked, and two rows a filter matches equally well should not trade
-    /// places for it — which inquire's unstable sort did not promise.
+    /// places for it.
     fn refilter(&mut self) {
         let typed: String = self.filter.chars.iter().collect();
         let mut scored: Vec<(usize, i64)> = self
+            .ask
             .options
             .iter()
             .enumerate()
@@ -80,18 +99,21 @@ enum Step {
     Cancel,
 }
 
-/// Every binding, and nothing else: no terminal, no I/O. `arrows` binds ←
-/// and →; without it they move through the filter, as they always did.
-fn apply(list: &mut List, key: KeyEvent, arrows: bool, page: usize) -> Step {
+/// Every binding, and nothing else: no terminal, no I/O.
+fn apply(list: &mut List, key: KeyEvent, page: usize) -> Step {
     if key.kind != KeyEventKind::Press {
         return Step::Continue;
     }
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
     let alt = key.modifiers.contains(KeyModifiers::ALT);
     let last = list.shown.len().saturating_sub(1);
+    let chose = |pick: fn(usize) -> Pick, list: &List| match list.highlighted() {
+        Some(index) => Step::Chose(pick(index)),
+        None => Step::Continue,
+    };
 
     match (key.code, ctrl, alt) {
-        // Up and down wrap, as inquire's did; a page and the ends do not.
+        // Up and down wrap; a page and the ends do not.
         (KeyCode::Up, false, false) | (KeyCode::Char('p'), true, false) => {
             list.cursor = list.cursor.checked_sub(1).unwrap_or(last)
         }
@@ -104,95 +126,128 @@ fn apply(list: &mut List, key: KeyEvent, arrows: bool, page: usize) -> Step {
         (KeyCode::End, ..) => list.cursor = last,
 
         // ← is about the whole list, so it needs no row under the cursor.
-        (KeyCode::Left, false, false) if arrows => return Step::Chose(Pick::Left),
-        (KeyCode::Right, false, false) if arrows => {
-            if let Some(index) = list.highlighted() {
-                return Step::Chose(Pick::Right(index));
-            }
-        }
+        (KeyCode::Left, false, false) if list.ask.arrows => return Step::Chose(Pick::Left),
+        (KeyCode::Right, false, false) if list.ask.arrows => return chose(Pick::Right, list),
+        (KeyCode::Tab, ..) if list.ask.filter => return chose(Pick::Tab, list),
 
-        _ => match line::apply(&mut list.filter, key) {
+        _ if list.ask.filter => match line::apply(&mut list.filter, key) {
             // A filter that matches nothing has nothing to choose.
-            line::Step::Submit => {
-                if let Some(index) = list.highlighted() {
-                    return Step::Chose(Pick::Enter(index));
-                }
-            }
+            line::Step::Submit => return chose(Pick::Enter, list),
             line::Step::Cancel => return Step::Cancel,
             line::Step::Continue => list.refilter(),
         },
+
+        (KeyCode::Enter, ..) => return chose(Pick::Enter, list),
+        (KeyCode::Esc, ..) | (KeyCode::Char('c' | 'g'), true, false) => return Step::Cancel,
+        (KeyCode::Char(digit @ '1'..='9'), false, false) => {
+            let at = digit as usize - '1' as usize;
+            if let Some(&index) = list.shown.get(at) {
+                return Step::Chose(Pick::Enter(index));
+            }
+        }
+        // The one option a letter starts, under the cursor for Enter to take:
+        // `y` and `n` at a yes or no, typed as they always were.
+        (KeyCode::Char(letter), false, false) => {
+            let starts = |at: &usize| {
+                let option = &list.ask.options[list.shown[*at]];
+                option
+                    .chars()
+                    .next()
+                    .is_some_and(|first| first.eq_ignore_ascii_case(&letter))
+            };
+            let matching: Vec<usize> = (0..list.shown.len()).filter(starts).collect();
+            if let [only] = matching[..] {
+                list.cursor = only;
+            }
+        }
+        _ => {}
     }
     Step::Continue
 }
 
-/// How many rows the list may show: the terminal less the prompt line, the
-/// help line and two rows of margin, so opening the list never scrolls the
-/// prompt off its own screen. Floored at five — a very short terminal still
-/// needs enough rows to be a list.
+/// How many rows the list may show: the terminal less the window's five lines
+/// — two rules, the question, the gap under it and the keys — and two rows of
+/// margin, so opening the list never scrolls its own top off the screen.
+/// Floored at five — a very short terminal still needs enough rows to be a
+/// list.
 fn page_size(height: usize) -> usize {
-    height.saturating_sub(4).max(5)
+    height.saturating_sub(7).max(5)
 }
 
-/// The first row on screen: the cursor held mid-page, as inquire held it,
-/// until an end of the list is in view.
+/// The first row on screen: the cursor held mid-page until an end of the list
+/// is in view.
 fn top(cursor: usize, len: usize, page: usize) -> usize {
     cursor
         .saturating_sub(page / 2)
         .min(len.saturating_sub(page))
 }
 
-/// Choose one of `options` in a terminal of `(width, height)`, with `help`
-/// under the list, or [`Aborted`].
-pub fn choose(
-    message: &str,
-    options: &[String],
-    help: &str,
-    arrows: bool,
-    (width, height): (usize, usize),
-) -> Result<Pick> {
+/// The gap before the panel, and its `│ ` and ` │`.
+const PANEL_CHROME: usize = 6;
+
+/// A terminal `width` wide split into the list's width and the width of the
+/// panel's text. A third of the terminal, up to 64 columns.
+///
+/// ponytail: below 100 columns the grid needs every one and there is no panel —
+/// and with it no note on screen. Stack the panel under the list if narrow
+/// terminals come to matter.
+pub fn split(width: usize) -> (usize, usize) {
+    if width < 100 {
+        return (width, 0);
+    }
+    let panel = (width / 3).min(64);
+    (width - panel, panel - PANEL_CHROME)
+}
+
+/// Choose one of the options in a terminal of `(width, height)`, or
+/// [`Aborted`].
+pub fn choose(ask: &Ask, (width, height): (usize, usize)) -> Result<Pick> {
     enable_raw_mode()?;
-    let picked = read(message, options, help, arrows, width, page_size(height));
+    let picked = read(ask, width, page_size(height));
     let _ = disable_raw_mode();
+    let _ = execute!(io::stdout(), Show);
     picked
 }
 
-fn read(
-    message: &str,
-    options: &[String],
-    help: &str,
-    arrows: bool,
-    width: usize,
-    page: usize,
-) -> Result<Pick> {
-    let mut list = List::new(options);
+fn read(ask: &Ask, width: usize, page: usize) -> Result<Pick> {
+    let mut list = List::new(ask);
     let mut out = io::stdout().lock();
+    let mut drawn = false;
 
     loop {
-        render(&mut out, message, &list, help, width, page)?;
+        let (lines, column) = frame(&list, width, page);
+        render(&mut out, &lines, column, drawn)?;
+        drawn = true;
         let Event::Key(key) = event::read()? else {
             continue;
         };
-        let step = match apply(&mut list, key, arrows, page) {
+        let step = match apply(&mut list, key, page) {
             Step::Continue => continue,
             step => step,
         };
 
-        queue!(out, MoveToColumn(0), Clear(ClearType::FromCursorDown))?;
+        // Up from the question to the rule, and the window is wiped.
+        queue!(
+            out,
+            MoveUp(1),
+            MoveToColumn(0),
+            Clear(ClearType::FromCursorDown)
+        )?;
         let Step::Chose(pick) = step else {
             // An abandoned prompt keeps its `?`, as the text prompt's does.
             queue!(out, PrintStyledContent(paint("?", Color::Green)))?;
-            queue!(out, Print(format!(" {message}\r\n")))?;
+            queue!(out, Print(format!(" {}\r\n", ask.message)))?;
             out.flush()?;
             return Err(Aborted.into());
         };
-        // A chosen row leaves the answered line inquire left. The arrows leave
-        // nothing: what they open is drawn where the list was.
+        // A chosen row leaves the answered line behind. The arrows and Tab
+        // leave nothing: what they open is drawn where the window was.
         if let Pick::Enter(index) = pick {
             queue!(
                 out,
                 PrintStyledContent(paint(">", Color::Green)),
-                Print(format!(" {message} ")),
-                PrintStyledContent(paint(options[index].trim(), Color::Cyan)),
+                Print(format!(" {} ", ask.message)),
+                PrintStyledContent(paint(ask.options[index].trim(), Color::Cyan)),
                 Print("\r\n"),
             )?;
         }
@@ -201,75 +256,211 @@ fn read(
     }
 }
 
-/// The prompt line, a page of the list and the help, with the cursor left in
-/// the filter. Every line is cut to the terminal: one that wrapped would throw
-/// off the move back up, and leave a copy of itself behind at every redraw.
-fn render(
-    out: &mut impl Write,
-    message: &str,
-    list: &List,
-    help: &str,
-    width: usize,
-    page: usize,
-) -> Result<()> {
-    let filter: String = list.filter.chars.iter().collect();
-    let top = top(list.cursor, list.shown.len(), page);
-    let rows = &list.shown[top..(top + page).min(list.shown.len())];
-    let more_below = top + rows.len() < list.shown.len();
-
-    queue!(
-        out,
-        MoveToColumn(0),
-        Clear(ClearType::FromCursorDown),
-        PrintStyledContent(paint("?", Color::Green)),
-        Print(cut(
-            &format!(" {message} {filter}"),
-            width.saturating_sub(1)
-        )),
-    )?;
-    for (at, &index) in rows.iter().enumerate() {
-        let here = top + at == list.cursor;
-        // `❯` is the cursor; `^` and `v` say the list goes on past the page.
-        let prefix = match (here, at) {
-            (true, _) => "❯",
-            (_, 0) if top > 0 => "^",
-            _ if at + 1 == rows.len() && more_below => "v",
-            _ => " ",
-        };
-        let text = cut(&format!("{prefix} {}", list.options[index]), width);
-        queue!(out, Print("\r\n"))?;
-        match here {
-            true => queue!(out, PrintStyledContent(paint(&text, Color::Cyan)))?,
-            false => queue!(out, Print(text))?,
+/// Print the window over the last one and leave the cursor on the question
+/// line — in the filter, or hidden when there is none.
+fn render(out: &mut impl Write, lines: &Window, column: Option<usize>, drawn: bool) -> Result<()> {
+    if drawn {
+        queue!(out, MoveUp(1))?;
+    }
+    queue!(out, MoveToColumn(0), Clear(ClearType::FromCursorDown))?;
+    for (at, line) in lines.iter().enumerate() {
+        if at > 0 {
+            queue!(out, Print("\r\n"))?;
+        }
+        for span in line {
+            queue!(out, PrintStyledContent(span.clone()))?;
         }
     }
-    let help = cut(&format!("[{help}]"), width);
-    queue!(
-        out,
-        Print("\r\n"),
-        PrintStyledContent(paint(&help, Color::Cyan))
-    )?;
-
-    let column = "? ".len() + message.chars().count() + 1 + list.filter.cursor;
-    queue!(
-        out,
-        MoveUp(rows.len() as u16 + 1),
-        MoveToColumn(column.min(width.saturating_sub(1)) as u16)
-    )?;
+    // A window is never fewer than five lines, so this is never `MoveUp(0)`,
+    // which terminals take as one.
+    queue!(out, MoveUp(lines.len() as u16 - 2))?;
+    match column {
+        Some(column) => queue!(out, MoveToColumn(column as u16), Show)?,
+        None => queue!(out, MoveToColumn(0), Hide)?,
+    }
     out.flush()?;
     Ok(())
 }
 
-fn cut(text: &str, width: usize) -> String {
-    text.chars().take(width).collect()
+/// One line being written, cut at the terminal's edge: one that wrapped would
+/// throw off the move back up, and leave a copy of itself at every redraw.
+struct Spans {
+    spans: Vec<StyledContent<String>>,
+    room: usize,
 }
 
-/// In the colours inquire used, honouring `NO_COLOR` as it did.
-fn paint(text: &str, color: Color) -> StyledContent<String> {
-    match std::env::var_os("NO_COLOR") {
-        Some(_) => text.to_string().stylize(),
-        None => text.to_string().with(color),
+impl Spans {
+    fn new(width: usize) -> Self {
+        Spans {
+            spans: Vec::new(),
+            room: width,
+        }
     }
+
+    fn push(&mut self, text: &str, color: Option<Color>) -> &mut Self {
+        let text = cut(text, self.room);
+        self.room -= text.chars().count();
+        self.spans.push(match color {
+            Some(color) => paint(&text, color),
+            None => text.stylize(),
+        });
+        self
+    }
+}
+
+const DIM: Option<Color> = Some(Color::DarkGrey);
+
+/// A window, line by line, each line in its colours.
+type Window = Vec<Vec<StyledContent<String>>>;
+
+/// Every line of the window, and the column the cursor sits at on the
+/// question line, if it shows at all. Pure, so the layout is testable.
+fn frame(list: &List, width: usize, page: usize) -> (Window, Option<usize>) {
+    let ask = list.ask;
+    let rule = || {
+        let mut line = Spans::new(width);
+        line.push(&"─".repeat(width), DIM);
+        line.spans
+    };
+    let mut lines = vec![rule()];
+
+    let mut question = Spans::new(width.saturating_sub(1));
+    question.push("│ ", DIM);
+    question.spans.push(cut(ask.message, question.room).bold());
+    question.room = question.room.saturating_sub(ask.message.chars().count());
+    let mut column = None;
+    if ask.filter {
+        let typed: String = list.filter.chars.iter().collect();
+        question.push("  ", None);
+        match typed.is_empty() {
+            true => question.push("type to filter", DIM),
+            false => question.push(&typed, None),
+        };
+        let at = "│ ".len() + ask.message.chars().count() + 2 + list.filter.cursor;
+        column = Some(at.min(width.saturating_sub(1)));
+    }
+    lines.push(question.spans);
+    lines.push(Vec::new());
+
+    let top = top(list.cursor, list.shown.len(), page);
+    let rows = &list.shown[top..(top + page).min(list.shown.len())];
+    let more_below = top + rows.len() < list.shown.len();
+    let (left, inner) = match ask.previews.is_empty() {
+        true => (width, 0),
+        false => split(width),
+    };
+    let preview = list
+        .highlighted()
+        .and_then(|index| ask.previews.get(index))
+        .filter(|preview| inner > 0 && !preview.is_empty());
+    let panel = preview.map_or(Vec::new(), |preview| boxed(preview, inner, page));
+
+    for at in 0..rows.len().max(panel.len()) {
+        let mut line = Spans::new(width);
+        let text = match rows.get(at) {
+            Some(&index) => {
+                // `❯` is the cursor; `^` and `v` say the list goes on past the
+                // page.
+                let marker = match (top + at == list.cursor, at) {
+                    (true, _) => "❯",
+                    (_, 0) if top > 0 => "^",
+                    _ if at + 1 == rows.len() && more_below => "v",
+                    _ => " ",
+                };
+                match ask.filter {
+                    true => format!("{marker} {}", ask.options[index]),
+                    false => format!("{marker} {}. {}", index + 1, ask.options[index]),
+                }
+            }
+            None => String::new(),
+        };
+        let here = rows.get(at).is_some() && top + at == list.cursor;
+        match panel.get(at) {
+            Some(boxed) => {
+                line.push(
+                    &format!("{:<left$}", cut(&text, left)),
+                    here.then_some(Color::Cyan),
+                );
+                for (text, color) in boxed {
+                    line.push(text, *color);
+                }
+            }
+            None => {
+                line.push(&text, here.then_some(Color::Cyan));
+            }
+        }
+        lines.push(line.spans);
+    }
+
+    lines.push(rule());
+    let mut keys = Spans::new(width);
+    keys.push(&footer(ask), DIM);
+    lines.push(keys.spans);
+    (lines, column)
+}
+
+/// The preview in a box `inner` wide, cut to the page: its long lines wrapped,
+/// the frame dim and the text plain.
+fn boxed(preview: &[String], inner: usize, page: usize) -> Vec<Vec<(String, Option<Color>)>> {
+    let edge = "─".repeat(inner + 2);
+    let mut lines = vec![vec![(format!("  ┌{edge}┐"), DIM)]];
+    let text = preview.iter().flat_map(|line| wrap(line, inner));
+    for text in text.take(page.saturating_sub(2)) {
+        lines.push(vec![
+            ("  │ ".to_string(), DIM),
+            (format!("{text:<inner$}"), None),
+            (" │".to_string(), DIM),
+        ]);
+    }
+    lines.push(vec![(format!("  └{edge}┘"), DIM)]);
+    lines
+}
+
+/// `text` in lines of at most `width`, broken at the last space that fits,
+/// or mid-word when none does.
+fn wrap(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut rest: Vec<char> = text.chars().collect();
+    let mut lines = Vec::new();
+    while rest.len() > width {
+        let at = rest[..=width]
+            .iter()
+            .rposition(|c| *c == ' ')
+            .filter(|at| *at > 0)
+            .unwrap_or(width);
+        lines.push(rest[..at].iter().collect::<String>().trim_end().to_string());
+        rest = rest[at..]
+            .iter()
+            .skip_while(|c| **c == ' ')
+            .copied()
+            .collect();
+    }
+    lines.push(rest.into_iter().collect());
+    lines
+}
+
+/// The line of keys under the window, Claude Code's words for them.
+fn footer(ask: &Ask) -> String {
+    let choose = match (ask.filter, ask.options.len().min(9)) {
+        (true, _) => "type to filter".to_string(),
+        (false, 1) => "1 to choose".to_string(),
+        (false, n) => format!("1-{n} to choose"),
+    };
+    [
+        "Enter to select",
+        "↑/↓ to navigate",
+        &choose,
+        ask.keys,
+        "Esc to cancel",
+    ]
+    .into_iter()
+    .filter(|keys| !keys.is_empty())
+    .collect::<Vec<_>>()
+    .join(" · ")
+}
+
+fn cut(text: &str, width: usize) -> String {
+    text.chars().take(width).collect()
 }
 
 #[cfg(test)]
@@ -294,15 +485,41 @@ mod tests {
             .to_vec()
     }
 
-    /// The step the last of `keys` ended on, with the arrows bound.
-    fn press(keys: &[KeyEvent]) -> Step {
-        let options = options();
-        let mut list = List::new(&options);
+    /// The picker: filtered, with the arrows and Tab bound.
+    fn picker(options: &[String]) -> Ask<'_> {
+        Ask {
+            options,
+            filter: true,
+            arrows: true,
+            ..Ask::default()
+        }
+    }
+
+    /// The step the last of `keys` ended on.
+    fn press_at(ask: &Ask, keys: &[KeyEvent]) -> Step {
+        let mut list = List::new(ask);
         let mut step = Step::Continue;
         for key in keys {
-            step = apply(&mut list, *key, true, 2);
+            step = apply(&mut list, *key, 2);
         }
         step
+    }
+
+    fn press(keys: &[KeyEvent]) -> Step {
+        press_at(&picker(&options()), keys)
+    }
+
+    /// The window as text, styles dropped.
+    fn text(ask: &Ask, keys: &[KeyEvent], width: usize) -> Vec<String> {
+        let mut list = List::new(ask);
+        for key in keys {
+            apply(&mut list, *key, 10);
+        }
+        frame(&list, width, 10)
+            .0
+            .iter()
+            .map(|line| line.iter().map(|span| span.content().as_str()).collect())
+            .collect()
     }
 
     #[test]
@@ -362,22 +579,24 @@ mod tests {
     #[test]
     fn a_filter_that_matches_rows_equally_keeps_them_in_list_order() {
         let options = ["b-one", "a-one", "c-one"].map(String::from).to_vec();
-        let mut list = List::new(&options);
+        let ask = picker(&options);
+        let mut list = List::new(&ask);
         for key in typed("one") {
-            apply(&mut list, key, true, 5);
+            apply(&mut list, key, 5);
         }
         assert_eq!(list.shown, [0, 1, 2]);
     }
 
     #[test]
-    fn the_arrows_choose_the_list_and_the_row() {
-        use KeyCode::{Down, Left, Right};
+    fn the_arrows_and_tab_choose_the_list_and_the_row() {
+        use KeyCode::{Down, Left, Right, Tab};
 
         assert_eq!(press(&[plain(Left)]), Step::Chose(Pick::Left));
         assert_eq!(
             press(&[plain(Down), plain(Right)]),
             Step::Chose(Pick::Right(1))
         );
+        assert_eq!(press(&[plain(Down), plain(Tab)]), Step::Chose(Pick::Tab(1)));
 
         let mut keys = typed("zzz");
         keys.push(plain(Left));
@@ -385,23 +604,9 @@ mod tests {
         keys.pop();
         keys.push(plain(Right));
         assert_eq!(press(&keys), Step::Continue, "→ does");
-    }
-
-    #[test]
-    fn unbound_arrows_edit_the_filter_as_they_did() {
-        let options = options();
-        let mut list = List::new(&options);
-        for key in typed("ap") {
-            apply(&mut list, key, false, 5);
-        }
-
-        assert_eq!(
-            apply(&mut list, plain(KeyCode::Left), false, 5),
-            Step::Continue
-        );
-        apply(&mut list, plain(KeyCode::Char('x')), false, 5);
-
-        assert_eq!(list.filter.chars.iter().collect::<String>(), "axp");
+        keys.pop();
+        keys.push(plain(Tab));
+        assert_eq!(press(&keys), Step::Continue, "and so does Tab");
     }
 
     #[test]
@@ -420,9 +625,132 @@ mod tests {
     }
 
     #[test]
+    fn a_numbered_list_chooses_by_digit_and_a_letter_moves_to_its_option() {
+        use KeyCode::{Char, Enter, Esc, Left, Tab};
+        let options = ["Join", "Kill", "Rename"].map(String::from).to_vec();
+        let menu = Ask {
+            options: &options,
+            ..Ask::default()
+        };
+
+        assert_eq!(
+            press_at(&menu, &[plain(Char('3'))]),
+            Step::Chose(Pick::Enter(2))
+        );
+        assert_eq!(
+            press_at(&menu, &[plain(Char('4'))]),
+            Step::Continue,
+            "no fourth option"
+        );
+        assert_eq!(
+            press_at(&menu, &[plain(Char('k'))]),
+            Step::Continue,
+            "a letter only moves the cursor…"
+        );
+        assert_eq!(
+            press_at(&menu, &[plain(Char('k')), plain(Enter)]),
+            Step::Chose(Pick::Enter(1)),
+            "…for Enter to take, as `y` Enter always did"
+        );
+        assert_eq!(
+            press_at(&menu, &[plain(Left), plain(Tab), plain(Enter)]),
+            Step::Chose(Pick::Enter(0)),
+            "unbound, ← and Tab do nothing"
+        );
+        assert_eq!(press_at(&menu, &[plain(Esc)]), Step::Cancel);
+
+        let yes_no = ["Yes", "No"].map(String::from).to_vec();
+        let confirm = Ask {
+            options: &yes_no,
+            cursor: 1,
+            ..Ask::default()
+        };
+        assert_eq!(
+            press_at(&confirm, &[plain(Enter)]),
+            Step::Chose(Pick::Enter(1)),
+            "the cursor starts on the default"
+        );
+        assert_eq!(
+            press_at(&confirm, &[plain(Char('y')), plain(Enter)]),
+            Step::Chose(Pick::Enter(0))
+        );
+    }
+
+    #[test]
+    fn the_window_is_a_rule_the_question_the_rows_a_rule_and_the_keys() {
+        let options = ["Join", "Kill"].map(String::from).to_vec();
+        let menu = Ask {
+            message: "ada/VBSN-4-picker",
+            options: &options,
+            keys: "← to go back",
+            arrows: true,
+            ..Ask::default()
+        };
+
+        assert_eq!(
+            text(&menu, &[plain(KeyCode::Down)], 40),
+            [
+                "─".repeat(40).as_str(),
+                "│ ada/VBSN-4-picker",
+                "",
+                "  1. Join",
+                "❯ 2. Kill",
+                "─".repeat(40).as_str(),
+                "Enter to select · ↑/↓ to navigate · 1-2 ",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_row_under_the_cursor_is_previewed_beside_the_list() {
+        let options = ["one", "two"].map(String::from).to_vec();
+        let previews = [vec!["first".to_string()], Vec::new()];
+        let ask = Ask {
+            message: "Open",
+            previews: &previews,
+            ..picker(&options)
+        };
+
+        let window = text(&ask, &[], 120);
+        let (left, inner) = split(120);
+        assert_eq!((left, inner), (80, 34));
+        assert_eq!(window[1], "│ Open  type to filter");
+        assert_eq!(
+            window[3],
+            format!("{:<80}  ┌{}┐", "❯ one", "─".repeat(36)),
+            "the panel starts where the list's width ends"
+        );
+        assert_eq!(window[4], format!("{:<80}  │ {:<34} │", "  two", "first"));
+        assert_eq!(window[5], format!("{:<80}  └{}┘", "", "─".repeat(36)));
+
+        let window = text(&ask, &[plain(KeyCode::Down)], 120);
+        assert_eq!(
+            &window[3..5],
+            ["  one", "❯ two"],
+            "a row with nothing to preview has no panel"
+        );
+        assert_eq!(
+            text(&ask, &[], 99)[3],
+            "❯ one",
+            "nor has a terminal too narrow for one"
+        );
+    }
+
+    #[test]
+    fn a_long_line_wraps_at_a_space_or_mid_word_when_there_is_none() {
+        assert_eq!(
+            wrap("Notes: fixing the arrows", 12),
+            ["Notes:", "fixing the", "arrows"]
+        );
+        assert_eq!(wrap("abcdefgh", 3), ["abc", "def", "gh"]);
+        assert_eq!(wrap("short", 12), ["short"]);
+        assert_eq!(wrap("", 12), [""]);
+    }
+
+    #[test]
     fn the_page_fills_the_terminal_and_follows_the_cursor() {
-        assert_eq!(page_size(50), 46, "a tall terminal shows 46 rows, not 7");
-        assert_eq!(page_size(24), 20);
+        assert_eq!(page_size(50), 43, "a tall terminal shows 43 rows, not 7");
+        assert_eq!(page_size(24), 17);
         assert_eq!(
             page_size(8),
             5,
