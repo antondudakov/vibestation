@@ -173,6 +173,14 @@ A cut branch tracks nothing. Cutting from `origin/<default>` would otherwise
 make the default branch its upstream, pointing its push and pull at `main`; the
 first `git push -u` names the remote branch after the local one instead.
 
+A cut branch arrives with what it records. Neither `git worktree add` nor
+`git checkout` touches submodules, so vibestation runs
+`git submodule update --init --recursive` where the branch landed, and — when
+`.gitattributes` tracks files with LFS — `git lfs pull`, so a checkout that
+skipped the smudge filter gets files rather than pointers. Either can reach the
+network, and a failure warns, naming the command to finish with, rather than
+stopping the work.
+
 The default branch is your config override if you set one, else what
 `origin/HEAD` points at, else whichever of `main` and `master` exists.
 
@@ -213,8 +221,9 @@ deleted at any time.
 
 The scan walks each root to `scan_depth`, stops descending at the first `.git`
 it finds — so submodules and vendored repositories stay out of the list — and
-does not follow symlinks. Nothing in the picker touches the network; the only
-network call the tool ever makes is the fetch you confirm before a branch.
+does not follow symlinks. Nothing in the picker touches the network; the tool
+reaches it only when cutting a branch — the fetch you confirm before it, and
+the submodules and LFS files the new checkout needs after it.
 
 ## Releasing
 

@@ -247,6 +247,10 @@ fn a_project_whose_session_is_running_can_still_start_new_work() {
             "",
         )
         .succeeds(
+            "/home/dev/code/notes-VBSN-4-picker-rows $ git submodule update --init --recursive",
+            "",
+        )
+        .succeeds(
             "tmux new-session -d -s ada/VBSN-4-picker-rows \
              -c /home/dev/code/notes-VBSN-4-picker-rows",
             "",
