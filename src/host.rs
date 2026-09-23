@@ -66,6 +66,15 @@ pub fn aborted(error: &anyhow::Error) -> bool {
     error.downcast_ref::<Aborted>().is_some()
 }
 
+/// Which of the three keys closed a [`Host::pick`], and on which row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pick {
+    Enter(usize),
+    /// ← is about the list rather than a row, so it carries none.
+    Left,
+    Right(usize),
+}
+
 pub trait Host {
     /// Run `argv`, optionally in `cwd`. A non-zero exit is a normal outcome
     /// reported in [`Output::status`], not an error; `Err` means the command
@@ -84,10 +93,11 @@ pub trait Host {
     /// symlinks. Unreadable directories are skipped rather than failing.
     fn walk(&self, root: &Path, max_depth: usize) -> Result<Vec<PathBuf>>;
 
-    /// Replace this process with `argv`. Returns only on failure: handing the
-    /// terminal to `tmux attach-session` is the last thing the tool does, and
-    /// an attach without the real terminal behind it is not an attach.
-    fn exec(&self, argv: &[&str]) -> Result<()>;
+    /// Replace this process with `argv`, optionally in `cwd`. Returns only on
+    /// failure: handing the terminal to `tmux attach-session` is the last thing
+    /// the tool does, and an attach without the real terminal behind it is not
+    /// an attach.
+    fn exec(&self, argv: &[&str], cwd: Option<&Path>) -> Result<()>;
 
     /// The terminal's width and height in cells: what a row is laid out
     /// against, and what decides how many rows the picker may show. A terminal
@@ -96,6 +106,18 @@ pub trait Host {
 
     /// Choose one of `options`, returning its index. Typing filters the list.
     fn select(&self, message: &str, options: &[String]) -> Result<usize>;
+
+    /// [`Host::select`] with ← and → bound as well, returning which of the
+    /// three keys chose. `help` is the line under the list saying what they
+    /// do here.
+    fn pick(&self, message: &str, options: &[String], help: &str) -> Result<Pick>;
+
+    /// One transient line — how far a refresh has got — drawn over the last
+    /// one; empty clears it.
+    fn status(&self, line: &str);
+
+    /// `$VISUAL`, else `$EDITOR`, else `vi`: the command, arguments and all.
+    fn editor(&self) -> String;
 
     /// Free text, pre-filled with an editable `default`.
     fn input(&self, message: &str, default: &str) -> Result<String>;
@@ -167,12 +189,16 @@ impl Host for RealHost {
             .collect())
     }
 
-    fn exec(&self, argv: &[&str]) -> Result<()> {
+    fn exec(&self, argv: &[&str], cwd: Option<&Path>) -> Result<()> {
         use std::os::unix::process::CommandExt;
         let (bin, args) = argv.split_first().context("exec called with empty argv")?;
+        let mut cmd = Command::new(bin);
+        cmd.args(args);
+        if let Some(dir) = cwd {
+            cmd.current_dir(dir);
+        }
         // `exec` returns only when it failed to replace the process.
-        Err(anyhow::Error::new(Command::new(bin).args(args).exec()))
-            .with_context(|| format!("running `{}`", argv.join(" ")))
+        Err(anyhow::Error::new(cmd.exec())).with_context(|| format!("running `{}`", argv.join(" ")))
     }
 
     fn terminal(&self) -> (usize, usize) {
@@ -182,16 +208,45 @@ impl Host for RealHost {
     }
 
     fn select(&self, message: &str, options: &[String]) -> Result<usize> {
-        // inquire's default scorer is a skim fuzzy match, so `vbsn3` finds
-        // `ada/VBSN-3-tmux` and no external `fzf` is needed.
-        prompt(
-            inquire::Select::new(message, options.to_vec())
-                .with_page_size(page_size(self.terminal().1))
-                .with_help_message(HELP)
-                .with_render_config(render_config())
-                .raw_prompt(),
-        )
-        .map(|choice| choice.index)
+        match crate::select::choose(message, options, HELP, false, self.terminal())? {
+            Pick::Enter(index) => Ok(index),
+            // Unbound, the arrows edit the filter and never close the list.
+            arrow => unreachable!("{arrow:?} from a select without arrows"),
+        }
+    }
+
+    fn pick(&self, message: &str, options: &[String], help: &str) -> Result<Pick> {
+        crate::select::choose(message, options, help, true, self.terminal())
+    }
+
+    fn status(&self, line: &str) {
+        use crossterm::cursor::MoveToColumn;
+        use crossterm::style::Print;
+        use crossterm::terminal::{Clear, ClearType};
+        use std::io::Write;
+
+        // Cut to the terminal, since clearing a line cannot reach the half of
+        // it that wrapped. Best effort: a status that cannot be drawn is lost.
+        let line: String = line
+            .chars()
+            .take(self.terminal().0.saturating_sub(1))
+            .collect();
+        let mut out = std::io::stdout().lock();
+        let _ = crossterm::queue!(
+            out,
+            MoveToColumn(0),
+            Clear(ClearType::CurrentLine),
+            Print(line)
+        );
+        let _ = out.flush();
+    }
+
+    fn editor(&self) -> String {
+        ["VISUAL", "EDITOR"]
+            .iter()
+            .filter_map(|name| std::env::var(name).ok())
+            .find(|editor| !editor.trim().is_empty())
+            .unwrap_or_else(|| "vi".to_string())
     }
 
     fn input(&self, message: &str, default: &str) -> Result<String> {
@@ -226,24 +281,8 @@ impl Host for RealHost {
 /// twenty-four is the oldest safe answer and the one every pipe deserves.
 pub const FALLBACK_TERMINAL: (usize, usize) = (80, 24);
 
-/// One line, under every prompt, saying what the keys do.
+/// One line, under every select, saying what the keys do.
 const HELP: &str = "↑↓ move · type to filter · enter select · esc cancel";
-
-/// How many rows the picker may show: the terminal less the prompt line, the
-/// help line and two rows of margin, so opening the list never scrolls the
-/// prompt off its own screen. Floored at five — a very short terminal still
-/// needs enough rows to be a list.
-fn page_size(height: usize) -> usize {
-    height.saturating_sub(4).max(5)
-}
-
-/// The default configuration — which honours `NO_COLOR` — with a sharper
-/// cursor: `❯` reads as a cursor at a glance where `>` reads as text.
-fn render_config() -> inquire::ui::RenderConfig<'static> {
-    use inquire::ui::{Color, RenderConfig, Styled};
-    RenderConfig::default()
-        .with_highlighted_option_prefix(Styled::new("❯").with_fg(Color::LightCyan))
-}
 
 /// inquire reports Esc and Ctrl-C as errors; here they are an abort.
 fn prompt<T>(result: inquire::error::InquireResult<T>) -> Result<T> {
@@ -257,22 +296,6 @@ fn prompt<T>(result: inquire::error::InquireResult<T>) -> Result<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_page_fills_the_terminal_but_never_overruns_it() {
-        assert_eq!(page_size(50), 46, "a tall terminal shows 46 rows, not 7");
-        assert_eq!(page_size(24), 20);
-        assert_eq!(
-            page_size(8),
-            5,
-            "floored, so a short terminal is still a list"
-        );
-        assert_eq!(
-            page_size(0),
-            5,
-            "a terminal with no height does not underflow"
-        );
-    }
 
     #[test]
     fn a_terminal_that_will_not_answer_is_eighty_by_twenty_four() {

@@ -1,5 +1,5 @@
-//! The picker's two escape hatches: refresh and add-manually, driven through
-//! the picker the way a developer reaches them.
+//! The picker's two escape hatches: refresh, which is ←, and the add-manually
+//! row, driven through the picker the way a developer reaches them.
 
 use vibestation::fake::{Answer, FakeHost};
 
@@ -9,7 +9,7 @@ const CACHE: &str = "/home/dev/.vibestation/projects-cache.json";
 
 /// A settled config with every field spelled out, a cache that predates a
 /// freshly cloned repository, and a repository outside the configured root.
-/// No tmux server, so the picker is projects and the two actions alone.
+/// No tmux server, so the picker is projects and the add row alone.
 fn host() -> FakeHost {
     FakeHost::new()
         .file(
@@ -41,29 +41,21 @@ fn rows(host: &FakeHost) -> Vec<String> {
 }
 
 #[test]
-fn the_two_actions_are_the_last_rows_of_the_picker() {
+fn adding_is_the_last_row_and_refreshing_is_a_key() {
     let host = host().answer(Answer::Abort);
 
-    assert_eq!(
-        rows(&host),
-        [
-            "api  ~/code/api",
-            "↻  refresh the project list",
-            "✚  add a project by path",
-        ]
-    );
+    assert_eq!(rows(&host), ["api  ~/code/api", "✚  add a project by path"]);
 }
 
 #[test]
-fn refresh_rescans_the_roots_and_rewrites_the_cache() {
-    let host = host().answers([Answer::Select(1), Answer::Abort]);
+fn left_rescans_the_roots_and_rewrites_the_cache() {
+    let host = host().answers([Answer::Left, Answer::Abort]);
 
     assert_eq!(
         rows(&host),
         [
             "api    ~/code/api",
             "fresh  ~/code/fresh",
-            "↻  refresh the project list",
             "✚  add a project by path",
         ],
         "the picker reopens over what the rescan found"
@@ -78,7 +70,7 @@ fn refresh_rescans_the_roots_and_rewrites_the_cache() {
 #[test]
 fn add_manually_refuses_a_path_that_is_not_a_repository() {
     let host = host().answers([
-        Answer::Select(2),
+        Answer::Select(1),
         Answer::text("/home/dev/notes"),
         Answer::Abort,
     ]);
@@ -103,12 +95,11 @@ fn add_manually_refuses_a_path_that_is_not_a_repository() {
 #[test]
 fn an_added_repository_lands_in_the_config_and_survives_a_refresh() {
     let host = host().answers([
-        Answer::Select(2),
+        Answer::Select(1),
         Answer::text("~/vendor/tool"),
-        // The picker has reopened with the new project, so refresh has moved
-        // down two rows; choosing it is what proves the addition is not merely
-        // in memory.
-        Answer::Select(3),
+        // A refresh after the addition is what proves it is not merely in
+        // memory.
+        Answer::Left,
         Answer::Abort,
     ]);
 
@@ -144,9 +135,27 @@ fn an_added_repository_lands_in_the_config_and_survives_a_refresh() {
             "api    ~/code/api",
             "fresh  ~/code/fresh",
             "tool   ~/vendor/tool",
-            "↻  refresh the project list",
             "✚  add a project by path",
         ],
         "the added project is still listed after the rescan"
+    );
+}
+
+#[test]
+fn a_refresh_says_how_far_it_has_got_and_clears_the_line_after() {
+    let host = host().answers([Answer::Left, Answer::Abort]);
+
+    rows(&host);
+
+    assert_eq!(
+        host.statuses(),
+        [
+            "scanning /home/dev/code…",
+            "▕██████████░░░░░░░░░░▏ 1/2 repositories",
+            "▕████████████████████▏ 2/2 repositories",
+            "",
+        ],
+        "the walk has no count, so it is named; the git pass has one, so it is \
+         a bar; and the line is gone before the picker comes back"
     );
 }

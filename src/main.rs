@@ -26,8 +26,9 @@ project`), offers to cut that branch in a new worktree beside the checkout or
 in place, creates the session in whichever directory the work now lives in, and
 drops you into it.
 
-The last two rows rescan your projects directories and add a repository by
-path.
+Left arrow rescans your projects directories. Right arrow opens a menu for the
+row under the cursor: kill or rename a session, open a project or worktree in
+$EDITOR, remove a worktree. The last row adds a repository by path.
 
 Configuration is ~/.vibestation/config.toml, written on first run, which asks
 one question.";

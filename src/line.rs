@@ -18,21 +18,23 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
 use std::io::{self, Write};
 
 /// The line being edited. The cursor is an index into `chars`, `0..=len`.
-struct Line {
-    chars: Vec<char>,
-    cursor: usize,
+/// The picker's filter is one too.
+#[derive(Default)]
+pub(crate) struct Line {
+    pub(crate) chars: Vec<char>,
+    pub(crate) cursor: usize,
 }
 
 /// What a key did to the prompt, rather than to the line.
 #[derive(Debug, PartialEq, Eq)]
-enum Step {
+pub(crate) enum Step {
     Continue,
     Submit,
     Cancel,
 }
 
 /// Every binding, and nothing else: no terminal, no I/O.
-fn apply(line: &mut Line, key: KeyEvent) -> Step {
+pub(crate) fn apply(line: &mut Line, key: KeyEvent) -> Step {
     // A terminal that reports releases and repeats reports each of them once
     // too often for a text field.
     if key.kind != KeyEventKind::Press {

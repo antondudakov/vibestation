@@ -1,12 +1,12 @@
 //! The one picker: live sessions, a separator, then projects ranked by
-//! frecency with their worktrees as indented children, and last the refresh
-//! and add-manually actions.
+//! frecency with their worktrees as indented children, and last the
+//! add-manually action.
 //!
 //! Every row is laid out in the same six columns — what it is, what it is
 //! called, where it is, its branch, what is running, how long since it was
 //! last attached — each padded to its width across the whole list, so
 //! sessions, projects and worktrees read as one grid rather than three. The
-//! grid is then fitted to the terminal: inquire wraps a row that does not fit,
+//! grid is then fitted to the terminal: a terminal wraps a row that does not fit,
 //! and one wrapped row ruins the list.
 
 use crate::scan::Project;
@@ -24,8 +24,6 @@ pub enum Row {
     /// no prompt library can make a row inert; choosing it reopens the picker,
     /// since decoration should cost nothing.
     Separator,
-    /// Rescan the configured roots and rewrite the cache.
-    Refresh,
     /// Take a repository by path, for one that lives outside those roots.
     AddManually,
 }
@@ -44,7 +42,7 @@ type Cells = [String; COLUMNS];
 
 /// Between two columns.
 const GUTTER: usize = 2;
-/// What inquire writes before every option: a one-cell prefix and a space.
+/// What the list writes before every option: a one-cell prefix and a space.
 const PREFIX: usize = 2;
 
 /// Below these a column has stopped saying anything, so it is given up whole
@@ -116,15 +114,14 @@ pub fn rows(
         table.push((Row::Separator, None));
     }
     table.extend(below);
-    // The escape hatches, last: nobody reaches for them until the list is
-    // wrong, and they are why the picker is never empty.
-    table.push((Row::Refresh, None));
+    // The escape hatch, last: nobody reaches for it until the list is wrong,
+    // and it is why the picker is never empty. Its sibling, refresh, is ←.
     table.push((Row::AddManually, None));
 
     render(table, width.saturating_sub(PREFIX))
 }
 
-/// The prompt line, which is the one line inquire never scrolls away — so it
+/// The prompt line, which is the one line the list never scrolls away — so it
 /// is where what the list is made of belongs. Worktrees credit their project,
 /// as they do everywhere else.
 pub fn title(rows: &[(Row, String)]) -> String {
@@ -145,7 +142,7 @@ fn cells(fields: &[&str; COLUMNS]) -> Cells {
     (*fields).map(str::to_string)
 }
 
-/// Cap, fit, then draw. The separator and the two actions are not grid rows —
+/// Cap, fit, then draw. The separator and the action are not grid rows —
 /// they have nothing to line up with — so they are drawn from the row itself,
 /// starting where the name column starts.
 fn render(mut table: Vec<(Row, Option<Cells>)>, budget: usize) -> Vec<(Row, String)> {
@@ -159,7 +156,6 @@ fn render(mut table: Vec<(Row, Option<Cells>)>, budget: usize) -> Vec<(Row, Stri
             let text = match (&cells, row) {
                 (Some(cells), _) => join(cells, &widths),
                 (None, Row::Separator) => "─".repeat(rule),
-                (None, Row::Refresh) => "↻  refresh the project list".to_string(),
                 (None, _) => "✚  add a project by path".to_string(),
             };
             // Whatever happened above, no row wraps.
@@ -255,7 +251,7 @@ fn width(text: &str) -> usize {
     text.chars().count()
 }
 
-/// `refresh the project list` in twelve cells is `refresh the…`.
+/// `add a project by path` in twelve cells is `add a proje…`.
 fn truncate(text: &str, max: usize) -> String {
     if width(text) <= max {
         return text.to_string();

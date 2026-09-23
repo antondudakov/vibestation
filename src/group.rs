@@ -27,22 +27,30 @@ pub struct Group {
 /// common directory are one project; the main checkout is the one whose git
 /// directory *is* that common directory. A worktree whose main checkout was
 /// never scanned stands on its own rather than disappearing.
+///
+/// Everything git is asked about a repository is asked in one pass over them,
+/// which is what makes that pass the bar on the status line.
 pub fn group(host: &dyn Host, repos: &[PathBuf]) -> Result<Vec<Group>> {
     let mut resolved = Vec::new();
-    for repo in repos {
+    for (done, repo) in repos.iter().enumerate() {
         let (git_dir, common) = dirs(host, repo)?;
         let is_main = git_dir == common;
-        resolved.push((repo, common, is_main));
+        let worktrees = match is_main {
+            true => worktrees(host, repo)?,
+            false => Vec::new(),
+        };
+        resolved.push((repo, common, is_main, worktrees));
+        host.status(&bar(done + 1, repos.len()));
     }
 
     let mut groups = Vec::new();
-    for (repo, common, is_main) in &resolved {
+    for (repo, common, is_main, worktrees) in &resolved {
         if *is_main {
             groups.push(Group {
                 main: (*repo).clone(),
-                worktrees: worktrees(host, repo)?,
+                worktrees: worktrees.clone(),
             });
-        } else if !resolved.iter().any(|(_, c, main)| *main && c == common) {
+        } else if !resolved.iter().any(|(_, c, main, _)| *main && c == common) {
             groups.push(Group {
                 main: (*repo).clone(),
                 worktrees: Vec::new(),
@@ -50,6 +58,17 @@ pub fn group(host: &dyn Host, repos: &[PathBuf]) -> Result<Vec<Group>> {
         }
     }
     Ok(groups)
+}
+
+/// `▕██████░░░░░░░░░░░░░░▏ 12/41 repositories`.
+fn bar(done: usize, total: usize) -> String {
+    const WIDTH: usize = 20;
+    let filled = (done * WIDTH).checked_div(total).unwrap_or(WIDTH);
+    format!(
+        "▕{}{}▏ {done}/{total} repositories",
+        "█".repeat(filled),
+        "░".repeat(WIDTH - filled)
+    )
 }
 
 /// The repository's git directory and its common directory, equal exactly when
@@ -100,4 +119,20 @@ pub fn worktrees(host: &dyn Host, main: &Path) -> Result<Vec<Worktree>> {
         .into_iter()
         .filter(|worktree| worktree.path != main && host.exists(&worktree.path))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_bar_fills_in_proportion_and_never_overflows() {
+        assert_eq!(bar(0, 4), format!("▕{}▏ 0/4 repositories", "░".repeat(20)));
+        assert_eq!(
+            bar(1, 4),
+            format!("▕{}{}▏ 1/4 repositories", "█".repeat(5), "░".repeat(15))
+        );
+        assert_eq!(bar(4, 4), format!("▕{}▏ 4/4 repositories", "█".repeat(20)));
+        assert_eq!(bar(0, 0), format!("▕{}▏ 0/0 repositories", "█".repeat(20)));
+    }
 }

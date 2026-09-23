@@ -110,3 +110,20 @@ pub fn add_worktree(
         )),
     }
 }
+
+/// Remove the worktree at `path`, never forced: git itself refuses one with
+/// changes or untracked files. Its branch stays, and with it every commit.
+pub fn remove_worktree(host: &dyn Host, main: &Path, path: &Path) -> Result<()> {
+    let out = host.run(
+        &["git", "worktree", "remove", &path.to_string_lossy()],
+        Some(main),
+    )?;
+    match out.succeeded() {
+        true => Ok(()),
+        false => Err(anyhow!(
+            "git would not remove worktree {}: {}",
+            path.display(),
+            out.stderr.trim()
+        )),
+    }
+}

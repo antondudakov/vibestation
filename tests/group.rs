@@ -90,9 +90,9 @@ fn grouping_asks_git_locally_and_only_about_what_it_found() {
         host.log(),
         [
             format!("/home/dev/code/api $ {REV_PARSE}"),
+            format!("/home/dev/code/api $ {LIST}"),
             format!("/home/dev/code/api-VBSN-1 $ {REV_PARSE}"),
             format!("/home/dev/code/orphan-wt $ {REV_PARSE}"),
-            format!("/home/dev/code/api $ {LIST}"),
         ],
         "one rev-parse per repository and one worktree list per main checkout \
          — the standalone worktree has no main here to enumerate from — and \

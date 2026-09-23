@@ -157,5 +157,29 @@ pub fn attach(host: &dyn Host, name: &str) -> Result<()> {
         true => "switch-client",
         false => "attach-session",
     };
-    host.exec(&["tmux", verb, "-t", name])
+    host.exec(&["tmux", verb, "-t", name], None)
+}
+
+/// End the session and everything running in it.
+pub fn kill(host: &dyn Host, name: &str) -> Result<()> {
+    let out = host.run(&["tmux", "kill-session", "-t", name], None)?;
+    match out.succeeded() {
+        true => Ok(()),
+        false => Err(anyhow!(
+            "tmux would not kill session {name}: {}",
+            out.stderr.trim()
+        )),
+    }
+}
+
+/// Rename `name` to `to`. Refused by tmux when `to` is taken.
+pub fn rename(host: &dyn Host, name: &str, to: &str) -> Result<()> {
+    let out = host.run(&["tmux", "rename-session", "-t", name, to], None)?;
+    match out.succeeded() {
+        true => Ok(()),
+        false => Err(anyhow!(
+            "tmux would not rename {name} to {to}: {}",
+            out.stderr.trim()
+        )),
+    }
 }

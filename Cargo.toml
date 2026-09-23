@@ -11,6 +11,8 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 # The version inquire already pulls, so naming it costs nothing to build.
 crossterm = "0.25"
+# The scorer inquire already pulls, now that the picker scores its own rows.
+fuzzy-matcher = "0.3"
 inquire = "0.7"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
