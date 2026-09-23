@@ -39,6 +39,8 @@ enum Action {
     Forget(usize),
     /// A project and one of its worktrees.
     Remove(usize, usize),
+    /// Offer each of a project's outdated worktrees for removal.
+    Clean(usize),
     Rescan,
     Add,
 }
@@ -113,7 +115,18 @@ pub fn run(host: &dyn Host) -> Result<()> {
                 found = scan::rescan(host, &config)?;
             }
             Action::Remove(index, child) => {
-                if remove(host, &sessions, &projects[index], child)? {
+                let project = &projects[index];
+                if remove(
+                    host,
+                    &sessions,
+                    &project.path,
+                    &project.worktrees[child].path,
+                )? {
+                    found = scan::rescan(host, &config)?;
+                }
+            }
+            Action::Clean(index) => {
+                if clean(host, &config, &sessions, &projects[index])? {
                     found = scan::rescan(host, &config)?;
                 }
             }
@@ -166,6 +179,9 @@ fn actions(
                 (Action::Start(index, None), "New session"),
                 (Action::Edit(index, None), &edit),
             ]);
+            if !project.worktrees.is_empty() {
+                offered.push((Action::Clean(index), "Clean up worktrees".into()));
+            }
             // Only what was added by hand can be taken off by hand: a scanned
             // project would be found again by the next refresh.
             if config.extra_projects.contains(&project.path) {
@@ -218,11 +234,10 @@ fn edit(host: &dyn Host, project: &Project, worktree: Option<usize>) -> Result<(
     host.exec(&argv, Some(project.dir(worktree)))
 }
 
-/// Remove a worktree — never forced, and after refusing what git would not:
-/// a session still sitting in it, whose shell would be left in a directory
-/// that is gone. Says whether it went.
-fn remove(host: &dyn Host, sessions: &[Session], project: &Project, child: usize) -> Result<bool> {
-    let path = &project.worktrees[child].path;
+/// Remove a worktree of `main` — never forced, and after refusing what git
+/// would not: a session still sitting in it, whose shell would be left in a
+/// directory that is gone. Says whether it went.
+fn remove(host: &dyn Host, sessions: &[Session], main: &Path, path: &Path) -> Result<bool> {
     if let Some(session) = sessions
         .iter()
         .find(|session| session.path.starts_with(path))
@@ -246,8 +261,28 @@ fn remove(host: &dyn Host, sessions: &[Session], project: &Project, child: usize
     if !host.confirm(&format!("Remove {}?", path.display()), false)? {
         return Ok(false);
     }
-    git::remove_worktree(host, &project.path, path)?;
+    git::remove_worktree(host, main, path)?;
     Ok(true)
+}
+
+/// Offer each of a project's outdated worktrees for removal, one at a time and
+/// with every refusal [`remove`] makes. Says whether any went.
+fn clean(
+    host: &dyn Host,
+    config: &Config,
+    sessions: &[Session],
+    project: &Project,
+) -> Result<bool> {
+    git::prune_worktrees(host, &project.path)?;
+    let outdated = git::outdated(host, config, &project.path)?;
+    if outdated.is_empty() {
+        println!("no outdated worktrees in {}", project.name);
+    }
+    let mut removed = false;
+    for path in &outdated {
+        removed |= remove(host, sessions, &project.path, path)?;
+    }
+    Ok(removed)
 }
 
 /// Take a repository by path and write it into the config, where it will be

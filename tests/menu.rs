@@ -192,7 +192,7 @@ fn a_scanned_project_offers_a_session_or_the_editor() {
     assert_eq!(host.prompts()[1], "api");
     assert_eq!(
         host.options(),
-        ["New session", "Open in code"],
+        ["New session", "Open in code", "Clean up worktrees"],
         "no way to take it off the list, since the next refresh would find it \
          again"
     );
@@ -335,6 +335,114 @@ fn a_worktree_with_a_session_in_it_is_not_removed() {
             .any(|c| c.contains("git status") || c.contains("worktree remove")),
         "refused before git is even asked: {:?}",
         host.log()
+    );
+}
+
+/// `api` as git sees it now: the two cached worktrees and two made since the
+/// last refresh, against an `origin/main` whose tree is `base`. The first is
+/// merged, the second — the busy one — and the third have lost their remote
+/// branches, and the fourth is neither.
+fn cleanable() -> FakeHost {
+    host()
+        .file("/home/dev/code/api-VBSN-1/.git", "")
+        .file("/home/dev/code/api-VBSN-2/.git", "")
+        .file("/home/dev/code/api-VBSN-3/.git", "")
+        .file("/home/dev/code/api-VBSN-4/.git", "")
+        .succeeds(
+            "/home/dev/code/api $ git worktree list --porcelain",
+            "worktree /home/dev/code/api\nbranch refs/heads/main\n\n\
+             worktree /home/dev/code/api-VBSN-1\nbranch refs/heads/ada/VBSN-1-init\n\n\
+             worktree /home/dev/code/api-VBSN-2\nbranch refs/heads/ada/VBSN-2-busy\n\n\
+             worktree /home/dev/code/api-VBSN-3\nbranch refs/heads/ada/VBSN-3-done\n\n\
+             worktree /home/dev/code/api-VBSN-4\nbranch refs/heads/ada/VBSN-4-wip\n",
+        )
+        .succeeds("git worktree prune", "")
+        .succeeds(
+            "git symbolic-ref --short refs/remotes/origin/HEAD",
+            "origin/main\n",
+        )
+        .succeeds(
+            "git rev-parse --verify --quiet origin/main^{tree}",
+            "base\n",
+        )
+        .succeeds(
+            "git for-each-ref --format=%(refname:short)\t%(upstream:track) refs/heads",
+            "ada/VBSN-1-init\t\nada/VBSN-2-busy\t[gone]\nada/VBSN-3-done\t[gone]\n\
+             ada/VBSN-4-wip\t[ahead 2]\nmain\t\n",
+        )
+        .succeeds(
+            "/home/dev/code/api-VBSN-1 $ git merge-tree --write-tree origin/main HEAD",
+            "base\n",
+        )
+        .succeeds("git merge-tree --write-tree origin/main HEAD", "other\n")
+}
+
+#[test]
+fn clean_up_asks_about_each_outdated_worktree_and_only_those() {
+    let host = cleanable()
+        .succeeds(STATUS, "")
+        .succeeds(
+            "/home/dev/code/api $ git worktree remove /home/dev/code/api-VBSN-1",
+            "",
+        )
+        .answers([
+            Answer::Right(2),
+            Answer::Select(2),
+            Answer::Confirm(true),
+            Answer::Confirm(false),
+            Answer::Abort,
+        ]);
+
+    drive(&host);
+
+    assert!(ran(&host, "/home/dev/code/api $ git worktree prune"));
+    assert_eq!(
+        host.prompts()
+            .iter()
+            .filter(|prompt| prompt.starts_with("Remove"))
+            .collect::<Vec<_>>(),
+        [
+            "Remove /home/dev/code/api-VBSN-1? [y/N]",
+            "Remove /home/dev/code/api-VBSN-3? [y/N]"
+        ],
+        "the merged one and the one whose remote is gone; not the one with a \
+         session in it, nor the one still being worked on"
+    );
+    assert!(ran(
+        &host,
+        "/home/dev/code/api $ git worktree remove /home/dev/code/api-VBSN-1"
+    ));
+    assert_eq!(
+        host.log()
+            .iter()
+            .filter(|c| c.contains("worktree remove"))
+            .count(),
+        1,
+        "declined, so the other stays: {:?}",
+        host.log()
+    );
+}
+
+#[test]
+fn clean_up_with_nothing_outdated_asks_nothing() {
+    let host = cleanable()
+        .succeeds(
+            "/home/dev/code/api-VBSN-1 $ git merge-tree --write-tree origin/main HEAD",
+            "other\n",
+        )
+        .succeeds(
+            "git for-each-ref --format=%(refname:short)\t%(upstream:track) refs/heads",
+            "",
+        )
+        .answers([Answer::Right(2), Answer::Select(2), Answer::Abort]);
+
+    drive(&host);
+
+    assert!(!host.log().iter().any(|c| c.contains("worktree remove")));
+    assert_eq!(
+        host.prompts().last().unwrap(),
+        "Open  1 running · 2 projects",
+        "straight back to the picker"
     );
 }
 

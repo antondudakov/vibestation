@@ -3,9 +3,10 @@
 //! of cutting a branch, and never fatal.
 
 use crate::config::Config;
+use crate::group;
 use crate::host::{Host, Output};
 use anyhow::{anyhow, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The branch checked out in `path`, empty when it is not a repository or its
 /// HEAD is detached — git answers `HEAD` for that, which names nothing.
@@ -126,6 +127,81 @@ pub fn remove_worktree(host: &dyn Host, main: &Path, path: &Path) -> Result<()> 
             out.stderr.trim()
         )),
     }
+}
+
+/// Forget the worktrees whose directories are gone. There is nothing on disk
+/// to lose, and the picker never listed them.
+pub fn prune_worktrees(host: &dyn Host, main: &Path) -> Result<()> {
+    host.run(&["git", "worktree", "prune"], Some(main))?;
+    Ok(())
+}
+
+/// The worktrees of `main` whose work is done: merging their HEAD into the
+/// default branch would change nothing — merged, squashed or rebased in as it
+/// stands — or their branch's remote was deleted. Nothing is fetched, so this
+/// is as current as the last fetch.
+///
+/// A branch cut and not yet committed to is merged by this measure, which is
+/// why each one is still asked about before it goes.
+pub fn outdated(host: &dyn Host, config: &Config, main: &Path) -> Result<Vec<PathBuf>> {
+    let default = default_branch(host, config, main)?;
+    // The remote ref where there is one: branches are cut from it, and
+    // nothing here pulls the local default branch up to it.
+    let remote = format!("origin/{default}");
+    let (base, tree) = match tree(host, main, &remote)? {
+        Some(tree) => (remote, Some(tree)),
+        None => (default.clone(), tree(host, main, &default)?),
+    };
+
+    let refs = host.run(
+        &[
+            "git",
+            "for-each-ref",
+            "--format=%(refname:short)\t%(upstream:track)",
+            "refs/heads",
+        ],
+        Some(main),
+    )?;
+    let gone: Vec<&str> = refs
+        .stdout
+        .lines()
+        .filter_map(|line| line.strip_suffix("\t[gone]"))
+        .collect();
+
+    let mut done = Vec::new();
+    // Asked of git rather than the cache, which is as old as the last refresh.
+    for worktree in group::worktrees(host, main)? {
+        let merged = match &tree {
+            // git before 2.38 has no --write-tree, fails, and so merges nothing.
+            Some(tree) => {
+                let out = host.run(
+                    &["git", "merge-tree", "--write-tree", &base, "HEAD"],
+                    Some(&worktree.path),
+                )?;
+                out.succeeded() && out.trimmed() == tree
+            }
+            None => false,
+        };
+        if merged || gone.contains(&worktree.branch.as_str()) {
+            done.push(worktree.path);
+        }
+    }
+    Ok(done)
+}
+
+/// The tree `rev` points at, `None` when there is no such ref.
+fn tree(host: &dyn Host, main: &Path, rev: &str) -> Result<Option<String>> {
+    let out = host.run(
+        &[
+            "git",
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{rev}^{{tree}}"),
+        ],
+        Some(main),
+    )?;
+    Ok(out.succeeded().then(|| out.trimmed().to_string()))
 }
 
 /// Bring a checkout a branch was just cut into up to what the branch records.

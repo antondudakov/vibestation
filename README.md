@@ -99,7 +99,7 @@ first entry is what Enter does; ← goes back to the list.
 | row | → offers |
 |---|---|
 | session | Join · Kill · Rename |
-| project | New session · Open in your editor · Remove from the list |
+| project | New session · Open in your editor · Clean up worktrees · Remove from the list |
 | worktree | New session · Open in your editor · Remove the worktree |
 
 Kill asks first. Rename offers the current name to edit. The editor is
@@ -109,6 +109,15 @@ scanned one would be found again; the repository is not touched. Removing a
 worktree is refused while a session sits in it or its tree has changes —
 untracked files included — and otherwise asks, runs `git worktree remove`
 without `--force`, and leaves the branch where it was.
+
+Clean up worktrees, offered for a project that has any, asks about each of its
+worktrees whose work is done — merging it into `origin/<default>` would change
+nothing, so it was merged, squashed or rebased in as it stands, or its branch's
+remote was deleted — one at a time, each with the same refusals as removing it
+by hand. Nothing is fetched, so it knows what your last fetch knew. A branch cut
+and not yet committed to counts as merged, which is why each one is asked
+about. Worktrees whose directories are already gone are pruned from git's list
+on the way.
 
 ## Starting work
 
