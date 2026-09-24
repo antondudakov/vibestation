@@ -1,6 +1,6 @@
 [package]
 name = "vibestation"
-version = "1.6.0"
+version = "1.6.1"
 edition = "2021"
 description = "One picker for your tmux sessions and git projects"
 license = "MIT"
