@@ -49,9 +49,13 @@ pub fn default_branch(host: &dyn Host, config: &Config, path: &Path) -> Result<S
 
 /// Whether the checkout has uncommitted changes, and so must not be branched
 /// in place. A path git cannot report on counts as clean: there is nothing to
-/// lose there.
+/// lose there. Submodules count whatever `.gitmodules` says to ignore, as
+/// they do in the check `git worktree remove` makes.
 pub fn is_dirty(host: &dyn Host, path: &Path) -> Result<bool> {
-    let out = host.run(&["git", "status", "--porcelain"], Some(path))?;
+    let out = host.run(
+        &["git", "status", "--porcelain", "--ignore-submodules=none"],
+        Some(path),
+    )?;
     Ok(out.succeeded() && !out.trimmed().is_empty())
 }
 
@@ -112,17 +116,52 @@ pub fn add_worktree(
     }
 }
 
-/// Remove the worktree at `path`, never forced: git itself refuses one with
-/// changes or untracked files. Its branch stays, and with it every commit.
-pub fn remove_worktree(host: &dyn Host, main: &Path, path: &Path) -> Result<()> {
-    let out = host.run(
-        &["git", "worktree", "remove", &path.to_string_lossy()],
-        Some(main),
-    )?;
+/// Remove the worktree at `path`: git itself refuses one with changes or
+/// untracked files. Its branch stays, and with it every commit.
+///
+/// `force` gets past git's refusal of any worktree with its submodules checked
+/// out, and past every other refusal too, so it is only for a worktree already
+/// found clean and holding no submodule commit that exists nowhere else.
+pub fn remove_worktree(host: &dyn Host, main: &Path, path: &Path, force: bool) -> Result<()> {
+    let path_arg = path.to_string_lossy();
+    let mut argv = vec!["git", "worktree", "remove"];
+    if force {
+        argv.push("--force");
+    }
+    argv.push(&path_arg);
+    let out = host.run(&argv, Some(main))?;
     match out.succeeded() {
         true => Ok(()),
         false => Err(anyhow!(
             "git would not remove worktree {}: {}",
+            path.display(),
+            out.stderr.trim()
+        )),
+    }
+}
+
+/// The submodules of the checkout at `path`, nested ones too, holding a commit
+/// none of their remotes has — made there and never pushed. Their repositories
+/// live inside a worktree's git directory and go when it is removed.
+///
+/// A submodule checked out at a commit its remote has since dropped from every
+/// branch is named too: it is left to be removed by hand.
+pub fn unpushed_submodules(host: &dyn Host, path: &Path) -> Result<Vec<String>> {
+    let out = host.run(
+        &[
+            "git",
+            "submodule",
+            "foreach",
+            "--recursive",
+            "--quiet",
+            r#"test -z "$(git rev-list -1 --all --not --remotes)" || echo "$displaypath""#,
+        ],
+        Some(path),
+    )?;
+    match out.succeeded() {
+        true => Ok(out.stdout.lines().map(str::to_string).collect()),
+        false => Err(anyhow!(
+            "git could not check the submodules of {}: {}",
             path.display(),
             out.stderr.trim()
         )),

@@ -88,7 +88,10 @@ fn a_checkout_on_the_default_branch_asks_once_and_offers_the_name() {
             "tmux new-session -d -s ada/VBSN-4-picker-rows -c /home/dev/code/api",
             "",
         )
-        .succeeds("/home/dev/code/api $ git status --porcelain", "")
+        .succeeds(
+            "/home/dev/code/api $ git status --porcelain --ignore-submodules=none",
+            "",
+        )
         .answers([
             Answer::Select(0),
             Answer::text("VBSN-4 picker rows"),
@@ -122,7 +125,10 @@ fn an_edited_name_is_the_one_used() {
             "tmux new-session -d -s ada/something-else -c /home/dev/code/api",
             "",
         )
-        .succeeds("/home/dev/code/api $ git status --porcelain", "")
+        .succeeds(
+            "/home/dev/code/api $ git status --porcelain --ignore-submodules=none",
+            "",
+        )
         .answers([
             Answer::Select(0),
             Answer::text("VBSN-4 picker rows"),
@@ -197,7 +203,10 @@ fn declining_the_offered_name_names_the_work_from_scratch() {
             "tmux new-session -d -s ada/something-else -c /home/dev/code/api-VBSN-1",
             "",
         )
-        .succeeds("/home/dev/code/api-VBSN-1 $ git status --porcelain", "")
+        .succeeds(
+            "/home/dev/code/api-VBSN-1 $ git status --porcelain --ignore-submodules=none",
+            "",
+        )
         .answers([
             Answer::Select(1),
             Answer::Confirm(false),
@@ -240,7 +249,10 @@ fn declining_the_offered_name_names_the_work_from_scratch() {
 fn a_project_whose_session_is_running_can_still_start_new_work() {
     let host = absent(host())
         .succeeds(LIST, "1\t0\t/home/dev/code/notes\tnvim\t\tada/notes-tidy\n")
-        .succeeds("/home/dev/code/notes $ git status --porcelain", "")
+        .succeeds(
+            "/home/dev/code/notes $ git status --porcelain --ignore-submodules=none",
+            "",
+        )
         .succeeds(
             "/home/dev/code/notes $ git worktree add --no-track -b \
              ada/VBSN-4-picker-rows /home/dev/code/notes-VBSN-4-picker-rows main",

@@ -249,9 +249,10 @@ fn edit(host: &dyn Host, project: &Project, worktree: Option<usize>) -> Result<(
     host.exec(&argv, Some(project.dir(worktree)))
 }
 
-/// Remove a worktree of `main` — never forced, and after refusing what git
-/// would not: a session still sitting in it, whose shell would be left in a
-/// directory that is gone. Says whether it went.
+/// Remove a worktree of `main` — after refusing what git would not, and a
+/// session still sitting in it, whose shell would be left in a directory that
+/// is gone. Forced only past git's refusal of checked-out submodules, once the
+/// work they could hold is found pushed. Says whether it went.
 fn remove(host: &dyn Host, sessions: &[Session], main: &Path, path: &Path) -> Result<bool> {
     if let Some(session) = sessions
         .iter()
@@ -272,11 +273,24 @@ fn remove(host: &dyn Host, sessions: &[Session], main: &Path, path: &Path) -> Re
         );
         return Ok(false);
     }
+    // git will not remove a worktree with its submodules checked out — every
+    // one `populate` made — since their repositories go with it. It is forced
+    // past that once none holds a commit that exists nowhere else.
+    let submodules = host.read_file(&path.join(".gitmodules"))?.is_some();
+    if submodules {
+        if let Some(submodule) = git::unpushed_submodules(host, path)?.first() {
+            println!(
+                "{submodule} has commits no remote has, so {} is not removed",
+                path.display()
+            );
+            return Ok(false);
+        }
+    }
     // Clean is not empty: what git ignores — builds, `.env` — goes with it.
     if !host.confirm(&format!("Remove {}?", path.display()), false)? {
         return Ok(false);
     }
-    git::remove_worktree(host, main, path)?;
+    git::remove_worktree(host, main, path, submodules)?;
     Ok(true)
 }
 

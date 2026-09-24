@@ -14,7 +14,9 @@ A project row's → menu gets **Clean up worktrees**, offered when the project
 has worktrees. It prunes the entries whose directories are gone, then asks
 about each worktree whose work is done, one at a time, through the same
 `remove` the menu's own entry uses: refused with a session in it or a dirty
-tree, confirmed defaulting to no, never forced, the branch left.
+tree, confirmed defaulting to no, the branch left. It is forced only past
+git's refusal of checked-out submodules, once none of them holds a commit its
+remotes lack.
 
 A worktree's work is done when either holds:
 
@@ -38,7 +40,8 @@ since the last refresh are included.
 
 §1 holds: two more git calls behind the one `Host`. §3 holds: nothing is
 fetched; the answer is as current as the last fetch. §4 holds: removal goes
-through `remove`, which refuses a dirty tree up front and never forces git.
+through `remove`, which refuses a dirty tree up front and forces git only past
+submodules it has already checked.
 `merge-tree --write-tree` needs git 2.38; an older git fails it, and a failure
 counts as not merged.
 

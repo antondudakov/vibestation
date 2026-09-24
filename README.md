@@ -131,8 +131,11 @@ Kill asks first. Rename offers the current name to edit. The editor is
 Remove from the list is offered only for a project you added by path, since a
 scanned one would be found again; the repository is not touched. Removing a
 worktree is refused while a session sits in it or its tree has changes —
-untracked files included — and otherwise asks, runs `git worktree remove`
-without `--force`, and leaves the branch where it was.
+untracked files and changes inside submodules included — or while a submodule
+holds commits none of its remotes has. Otherwise it asks, runs
+`git worktree remove`, and leaves the branch where it was. `--force` is passed
+only for a worktree with submodules, which git refuses to remove whatever
+state they are in.
 
 Clean up worktrees, offered for a project that has any, asks about each of its
 worktrees whose work is done — merging it into `origin/<default>` would change

@@ -5,7 +5,7 @@ use vibestation::fake::{Answer, FakeHost};
 
 const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_attached}\t#{pane_current_path}\t#{pane_current_command}\t#{@note}\t#{session_name}";
 const BRANCH: &str = "git rev-parse --abbrev-ref HEAD";
-const STATUS: &str = "git status --porcelain";
+const STATUS: &str = "git status --porcelain --ignore-submodules=none";
 const CONFIG: &str = "/home/dev/.vibestation/config.toml";
 const CACHE: &str = "/home/dev/.vibestation/projects-cache.json";
 const STATE: &str = "/home/dev/.vibestation/state.json";
@@ -383,6 +383,64 @@ fn a_clean_worktree_is_removed_after_asking_and_its_branch_is_left() {
             .iter()
             .any(|(path, _)| path.ends_with("projects-cache.json")),
         "the list is rescanned without it"
+    );
+}
+
+const SUBMODULES: &str = r#"git submodule foreach --recursive --quiet test -z "$(git rev-list -1 --all --not --remotes)" || echo "$displaypath""#;
+
+#[test]
+fn a_worktree_with_submodules_is_forced_once_they_hold_nothing_unpushed() {
+    let host = host()
+        .file(
+            "/home/dev/code/api-VBSN-1/.gitmodules",
+            "[submodule \"lib\"]\n",
+        )
+        .succeeds(&format!("/home/dev/code/api-VBSN-1 $ {STATUS}"), "")
+        .succeeds(&format!("/home/dev/code/api-VBSN-1 $ {SUBMODULES}"), "")
+        .succeeds(
+            "/home/dev/code/api $ git worktree remove --force /home/dev/code/api-VBSN-1",
+            "",
+        )
+        .answers([
+            Answer::Right(3),
+            Answer::Select(2),
+            Answer::Confirm(true),
+            Answer::Abort,
+        ]);
+
+    drive(&host);
+
+    assert!(
+        ran(
+            &host,
+            "/home/dev/code/api $ git worktree remove --force /home/dev/code/api-VBSN-1"
+        ),
+        "git refuses any worktree with submodules checked out: {:?}",
+        host.log()
+    );
+}
+
+#[test]
+fn a_worktree_whose_submodule_holds_unpushed_commits_is_not_removed() {
+    let host = host()
+        .file(
+            "/home/dev/code/api-VBSN-1/.gitmodules",
+            "[submodule \"lib\"]\n",
+        )
+        .succeeds(&format!("/home/dev/code/api-VBSN-1 $ {STATUS}"), "")
+        .succeeds(
+            &format!("/home/dev/code/api-VBSN-1 $ {SUBMODULES}"),
+            "lib\n",
+        )
+        .answers([Answer::Right(3), Answer::Select(2), Answer::Abort]);
+
+    drive(&host);
+
+    assert!(!host.log().iter().any(|c| c.contains("worktree remove")));
+    assert!(
+        !host.prompts().iter().any(|p| p.starts_with("Remove ")),
+        "refused before asking: {:?}",
+        host.prompts()
     );
 }
 

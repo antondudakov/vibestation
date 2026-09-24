@@ -8,7 +8,7 @@ const LIST: &str = "tmux list-sessions -F #{session_attached}\t#{session_last_at
 const BRANCH: &str = "/home/dev/code/api $ git rev-parse --abbrev-ref HEAD";
 const ORIGIN_HEAD: &str = "/home/dev/code/api $ git symbolic-ref --short refs/remotes/origin/HEAD";
 const MAIN: &str = "/home/dev/code/api $ git rev-parse --verify --quiet refs/heads/main";
-const STATUS: &str = "/home/dev/code/api $ git status --porcelain";
+const STATUS: &str = "/home/dev/code/api $ git status --porcelain --ignore-submodules=none";
 const FETCH: &str = "/home/dev/code/api $ git fetch origin";
 const SUBMODULES: &str = "git submodule update --init --recursive";
 const SESSION: &str = "tmux new-session -d -s ada/VBSN-4-tidy -c /home/dev/code/api";
