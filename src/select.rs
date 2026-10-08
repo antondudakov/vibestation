@@ -40,6 +40,9 @@ pub struct Ask<'a> {
     pub arrows: bool,
     /// The option the cursor starts on.
     pub cursor: usize,
+    /// What the last action had to say — why a worktree was not removed —
+    /// under the question, where it cannot scroll away.
+    pub notes: &'a [String],
 }
 
 /// The list as the keys have left it.
@@ -203,7 +206,8 @@ pub fn split(width: usize) -> (usize, usize) {
 /// [`Aborted`].
 pub fn choose(ask: &Ask, (width, height): (usize, usize)) -> Result<Pick> {
     enable_raw_mode()?;
-    let picked = read(ask, width, page_size(height));
+    let noted = noted(ask.notes, width).len();
+    let picked = read(ask, width, page_size(height.saturating_sub(noted)));
     let _ = disable_raw_mode();
     let _ = execute!(io::stdout(), Show);
     picked
@@ -336,10 +340,15 @@ fn frame(list: &List, width: usize, page: usize) -> (Window, Option<usize>) {
             true => question.push("type to filter", DIM),
             false => question.push(&typed, None),
         };
-        let at = "│ ".len() + ask.message.chars().count() + 2 + list.filter.cursor;
+        let at = "│ ".chars().count() + ask.message.chars().count() + 2 + list.filter.cursor;
         column = Some(at.min(width.saturating_sub(1)));
     }
     lines.push(question.spans);
+    for note in noted(ask.notes, width) {
+        let mut line = Spans::new(width);
+        line.push("│ ", DIM).push(&note, Some(Color::Yellow));
+        lines.push(line.spans);
+    }
     lines.push(Vec::new());
 
     let top = top(list.cursor, list.shown.len(), page);
@@ -414,6 +423,16 @@ fn boxed(preview: &[String], inner: usize, page: usize) -> Vec<Vec<(String, Opti
     }
     lines.push(vec![(format!("  └{edge}┘"), DIM)]);
     lines
+}
+
+/// The notes as the lines they take under the question: wrapped rather than
+/// cut, since the reason comes last — git's own error has several lines.
+fn noted(notes: &[String], width: usize) -> Vec<String> {
+    notes
+        .iter()
+        .flat_map(|note| note.lines())
+        .flat_map(|line| wrap(line.trim_end(), width.saturating_sub(2)))
+        .collect()
 }
 
 /// `text` in lines of at most `width`, broken at the last space that fits,
@@ -698,6 +717,58 @@ mod tests {
                 "─".repeat(40).as_str(),
                 "Enter to select · ↑/↓ to navigate · 1-2 ",
             ]
+        );
+    }
+
+    #[test]
+    fn the_filter_cursor_sits_right_after_what_was_typed() {
+        let options = options();
+        let ask = Ask {
+            message: "Open",
+            ..picker(&options)
+        };
+        let mut list = List::new(&ask);
+        for key in typed("api") {
+            apply(&mut list, key, 10);
+        }
+        let (lines, column) = frame(&list, 80, 10);
+        let question: String = lines[1]
+            .iter()
+            .map(|span| span.content().as_str())
+            .collect();
+        assert_eq!(question, "│ Open  api");
+        assert_eq!(
+            column,
+            Some(question.chars().count()),
+            "not two cells past it"
+        );
+    }
+
+    #[test]
+    fn notes_sit_under_the_question() {
+        let options = ["Yes", "No"].map(String::from).to_vec();
+        let notes = [
+            "api-VBSN-1 has uncommitted changes".to_string(),
+            "fatal: locked\nuse 'remove -f -f'".to_string(),
+        ];
+        let ask = Ask {
+            message: "Remove api-VBSN-2?",
+            options: &options,
+            notes: &notes,
+            ..Ask::default()
+        };
+        assert_eq!(
+            &text(&ask, &[], 24)[1..8],
+            [
+                "│ Remove api-VBSN-2?",
+                "│ api-VBSN-1 has",
+                "│ uncommitted changes",
+                "│ fatal: locked",
+                "│ use 'remove -f -f'",
+                "",
+                "❯ 1. Yes",
+            ],
+            "wrapped, not cut, and git's lines kept apart"
         );
     }
 

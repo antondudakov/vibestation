@@ -365,7 +365,11 @@ fn a_clean_worktree_is_removed_after_asking_and_its_branch_is_left() {
         "api-VBSN-1",
         "titled as its row names it"
     );
-    assert_eq!(host.prompts()[2], "Remove /home/dev/code/api-VBSN-1? [y/N]");
+    assert_eq!(
+        host.prompts()[2],
+        "Remove api-VBSN-1? [Y/n]",
+        "named as its row names it, and chosen by hand, so Yes leads"
+    );
     assert!(
         ran(
             &host,
@@ -442,6 +446,10 @@ fn a_worktree_whose_submodule_holds_unpushed_commits_is_not_removed() {
         "refused before asking: {:?}",
         host.prompts()
     );
+    assert_eq!(
+        host.said(),
+        ["lib in api-VBSN-1 has commits no remote has, so it is not removed"]
+    );
 }
 
 #[test]
@@ -465,13 +473,18 @@ fn a_dirty_worktree_is_not_removed_and_nothing_is_asked() {
     let host = host()
         .succeeds(
             &format!("/home/dev/code/api-VBSN-1 $ {STATUS}"),
-            "?? notes.txt\n",
+            "?? notes.txt\n M src/lib.rs\n",
         )
         .answers([Answer::Right(3), Answer::Select(2), Answer::Abort]);
 
     drive(&host);
 
     assert!(!host.log().iter().any(|c| c.contains("worktree remove")));
+    assert_eq!(
+        host.said(),
+        ["api-VBSN-1 has uncommitted changes (notes.txt and 1 more), so it is not removed"],
+        "says what is in the way, in the picker it goes back to"
+    );
     assert_eq!(
         host.prompts().last().unwrap(),
         "Open  1 running · 2 projects",
@@ -492,6 +505,46 @@ fn a_worktree_with_a_session_in_it_is_not_removed() {
             .any(|c| c.contains("git status") || c.contains("worktree remove")),
         "refused before git is even asked: {:?}",
         host.log()
+    );
+    assert_eq!(
+        host.said(),
+        ["ada/VBSN-2-busy is running in api-VBSN-2, so it is not removed"]
+    );
+}
+
+#[test]
+fn a_removal_git_refuses_is_said_and_the_list_rescanned_not_fatal() {
+    let host = host()
+        .succeeds(&format!("/home/dev/code/api-VBSN-1 $ {STATUS}"), "")
+        .fails(
+            "/home/dev/code/api $ git worktree remove /home/dev/code/api-VBSN-1",
+            128,
+            "fatal: cannot remove a locked working tree",
+        )
+        .answers([
+            Answer::Right(3),
+            Answer::Select(2),
+            Answer::Confirm(true),
+            Answer::Abort,
+        ]);
+
+    drive(&host);
+
+    assert_eq!(
+        host.prompts().last().unwrap(),
+        "Open  1 running · 2 projects",
+        "back to the picker rather than out of the tool"
+    );
+    assert_eq!(
+        host.said(),
+        ["git would not remove worktree /home/dev/code/api-VBSN-1: \
+          fatal: cannot remove a locked working tree"]
+    );
+    assert!(
+        host.writes()
+            .iter()
+            .any(|(path, _)| path.ends_with("projects-cache.json")),
+        "rescanned, since git may have got halfway"
     );
 }
 
@@ -558,10 +611,7 @@ fn clean_up_asks_about_each_outdated_worktree_and_only_those() {
             .iter()
             .filter(|prompt| prompt.starts_with("Remove"))
             .collect::<Vec<_>>(),
-        [
-            "Remove /home/dev/code/api-VBSN-1? [y/N]",
-            "Remove /home/dev/code/api-VBSN-3? [y/N]"
-        ],
+        ["Remove api-VBSN-1? [y/N]", "Remove api-VBSN-3? [y/N]"],
         "the merged one and the one whose remote is gone; not the one with a \
          session in it, nor the one still being worked on"
     );
@@ -600,6 +650,11 @@ fn clean_up_with_nothing_outdated_asks_nothing() {
         host.prompts().last().unwrap(),
         "Open  1 running · 2 projects",
         "straight back to the picker"
+    );
+    assert_eq!(
+        host.said(),
+        ["none of api's worktrees is merged or has lost its remote branch"],
+        "which says why nothing was offered"
     );
 }
 

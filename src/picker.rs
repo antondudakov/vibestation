@@ -360,7 +360,8 @@ fn elide(path: &str, max: usize) -> String {
     truncate(segments.last().unwrap_or(&rest), max)
 }
 
-fn base(path: &Path) -> String {
+/// A directory's own name, which is what a worktree's row calls it.
+pub fn base(path: &Path) -> String {
     path.file_name()
         .unwrap_or(path.as_os_str())
         .to_string_lossy()

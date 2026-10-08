@@ -47,16 +47,26 @@ pub fn default_branch(host: &dyn Host, config: &Config, path: &Path) -> Result<S
     .to_string())
 }
 
-/// Whether the checkout has uncommitted changes, and so must not be branched
-/// in place. A path git cannot report on counts as clean: there is nothing to
-/// lose there. Submodules count whatever `.gitmodules` says to ignore, as
-/// they do in the check `git worktree remove` makes.
-pub fn is_dirty(host: &dyn Host, path: &Path) -> Result<bool> {
+/// The paths with uncommitted changes in the checkout, untracked files
+/// included: none, and it may be branched in place or removed. A path git
+/// cannot report on counts as clean: there is nothing to lose there.
+/// Submodules count whatever `.gitmodules` says to ignore, as they do in the
+/// check `git worktree remove` makes.
+pub fn changes(host: &dyn Host, path: &Path) -> Result<Vec<String>> {
     let out = host.run(
         &["git", "status", "--porcelain", "--ignore-submodules=none"],
         Some(path),
     )?;
-    Ok(out.succeeded() && !out.trimmed().is_empty())
+    if !out.succeeded() {
+        return Ok(Vec::new());
+    }
+    // `XY path`, two status letters and a space before it.
+    Ok(out
+        .trimmed()
+        .lines()
+        .filter_map(|line| line.get(3..))
+        .map(str::to_string)
+        .collect())
 }
 
 pub fn fetch(host: &dyn Host, path: &Path) -> Result<Output> {

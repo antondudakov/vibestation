@@ -9,6 +9,7 @@ use std::fmt;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use std::time::SystemTime;
 
 /// The result of running a command.
@@ -127,6 +128,11 @@ pub trait Host {
     /// one; empty clears it.
     fn status(&self, line: &str);
 
+    /// Something the developer should know — why a worktree was not removed —
+    /// shown in the next prompt, under its question, rather than printed above
+    /// a list that is about to be redrawn over it.
+    fn say(&self, line: &str);
+
     /// `$VISUAL`, else `$EDITOR`, else `vi`: the command, arguments and all.
     fn editor(&self) -> String;
 
@@ -147,6 +153,22 @@ pub trait Host {
 
 /// The one production implementation.
 pub struct RealHost;
+
+/// What [`Host::say`] was given since the last prompt. ponytail: a global,
+/// because there is one `RealHost` per process; a field if that ever changes.
+static SAID: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn said() -> Vec<String> {
+    std::mem::take(&mut *SAID.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
+}
+
+/// For what draws no list to show them in: the text prompt, and the process
+/// `exec` hands the terminal to.
+fn print_said() {
+    for line in said() {
+        println!("{line}");
+    }
+}
 
 impl Host for RealHost {
     fn run(&self, argv: &[&str], cwd: Option<&Path>) -> Result<Output> {
@@ -202,6 +224,7 @@ impl Host for RealHost {
 
     fn exec(&self, argv: &[&str], cwd: Option<&Path>) -> Result<()> {
         use std::os::unix::process::CommandExt;
+        print_said();
         let (bin, args) = argv.split_first().context("exec called with empty argv")?;
         let mut cmd = Command::new(bin);
         cmd.args(args);
@@ -219,9 +242,11 @@ impl Host for RealHost {
     }
 
     fn select(&self, message: &str, options: &[String]) -> Result<usize> {
+        let notes = said();
         let ask = Ask {
             message,
             options,
+            notes: &notes,
             ..Ask::default()
         };
         match crate::select::choose(&ask, self.terminal())? {
@@ -238,6 +263,7 @@ impl Host for RealHost {
         previews: &[Vec<String>],
         keys: &str,
     ) -> Result<Pick> {
+        let notes = said();
         let ask = Ask {
             message,
             options,
@@ -245,6 +271,7 @@ impl Host for RealHost {
             keys,
             filter: !previews.is_empty(),
             arrows: true,
+            notes: &notes,
             ..Ask::default()
         };
         crate::select::choose(&ask, self.terminal())
@@ -272,6 +299,12 @@ impl Host for RealHost {
         let _ = out.flush();
     }
 
+    fn say(&self, line: &str) {
+        SAID.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(line.to_string());
+    }
+
     fn editor(&self) -> String {
         ["VISUAL", "EDITOR"]
             .iter()
@@ -281,16 +314,19 @@ impl Host for RealHost {
     }
 
     fn input(&self, message: &str, default: &str) -> Result<String> {
+        print_said();
         crate::line::edit(message, default, self.terminal().0)
     }
 
     /// Yes or no, as a list of two with the cursor on the default.
     fn confirm(&self, message: &str, default: bool) -> Result<bool> {
         let options = ["Yes", "No"].map(String::from);
+        let notes = said();
         let ask = Ask {
             message,
             options: &options,
             cursor: usize::from(!default),
+            notes: &notes,
             ..Ask::default()
         };
         Ok(crate::select::choose(&ask, self.terminal())? == Pick::Enter(0))

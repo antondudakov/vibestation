@@ -50,6 +50,7 @@ pub struct FakeHost {
     options: RefCell<Vec<String>>,
     previews: RefCell<Vec<Vec<String>>>,
     statuses: RefCell<Vec<String>>,
+    said: RefCell<Vec<String>>,
 }
 
 impl Default for FakeHost {
@@ -75,6 +76,7 @@ impl FakeHost {
             options: RefCell::new(Vec::new()),
             previews: RefCell::new(Vec::new()),
             statuses: RefCell::new(Vec::new()),
+            said: RefCell::new(Vec::new()),
         }
     }
 
@@ -181,6 +183,11 @@ impl FakeHost {
     /// Every status line drawn, in order, the empty one that clears included.
     pub fn statuses(&self) -> Vec<String> {
         self.statuses.borrow().clone()
+    }
+
+    /// Everything [`Host::say`] was given, in order.
+    pub fn said(&self) -> Vec<String> {
+        self.said.borrow().clone()
     }
 
     fn key(argv: &[&str], cwd: Option<&Path>) -> String {
@@ -312,6 +319,10 @@ impl Host for FakeHost {
 
     fn status(&self, line: &str) {
         self.statuses.borrow_mut().push(line.to_string());
+    }
+
+    fn say(&self, line: &str) {
+        self.said.borrow_mut().push(line.to_string());
     }
 
     fn editor(&self) -> String {

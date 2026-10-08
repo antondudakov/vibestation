@@ -110,7 +110,7 @@ pub fn run(host: &dyn Host) -> Result<()> {
                     // A taken name is a slip, not a fault: the picker is still
                     // there to try again from.
                     if let Err(refused) = tmux::rename(host, name, &to) {
-                        println!("{refused}");
+                        host.say(&refused.to_string());
                     }
                     sessions = tmux::list(host)?;
                 }
@@ -131,12 +131,9 @@ pub fn run(host: &dyn Host) -> Result<()> {
             }
             Action::Remove(index, child) => {
                 let project = &projects[index];
-                if remove(
-                    host,
-                    &sessions,
-                    &project.path,
-                    &project.worktrees[child].path,
-                )? {
+                // Chosen by hand from its own menu, so Yes is the default.
+                let path = &project.worktrees[child].path;
+                if remove(host, &sessions, &project.path, path, true)? {
                     found = scan::rescan(host, &config)?;
                 }
             }
@@ -252,25 +249,38 @@ fn edit(host: &dyn Host, project: &Project, worktree: Option<usize>) -> Result<(
 /// Remove a worktree of `main` — after refusing what git would not, and a
 /// session still sitting in it, whose shell would be left in a directory that
 /// is gone. Forced only past git's refusal of checked-out submodules, once the
-/// work they could hold is found pushed. Says whether it went.
-fn remove(host: &dyn Host, sessions: &[Session], main: &Path, path: &Path) -> Result<bool> {
+/// work they could hold is found pushed. Every refusal says why, by the name
+/// its row has. Says whether git's worktrees may have changed, which a failed
+/// removal also counts as: git may have got halfway.
+fn remove(
+    host: &dyn Host,
+    sessions: &[Session],
+    main: &Path,
+    path: &Path,
+    default: bool,
+) -> Result<bool> {
+    let name = picker::base(path);
     if let Some(session) = sessions
         .iter()
         .find(|session| session.path.starts_with(path))
     {
-        println!(
-            "{} is running in {}, so it is not removed",
-            session.name,
-            path.display()
-        );
+        host.say(&format!(
+            "{} is running in {name}, so it is not removed",
+            session.name
+        ));
         return Ok(false);
     }
-    // Constitution §4, said up front rather than left to git's refusal.
-    if git::is_dirty(host, path)? {
-        println!(
-            "uncommitted changes in {}, so it is not removed",
-            path.display()
-        );
+    // Constitution §4, said up front rather than left to git's refusal, and
+    // naming what is in the way — an untracked file is easy to forget.
+    let changes = git::changes(host, path)?;
+    if let Some(first) = changes.first() {
+        let more = match changes.len() {
+            1 => String::new(),
+            n => format!(" and {} more", n - 1),
+        };
+        host.say(&format!(
+            "{name} has uncommitted changes ({first}{more}), so it is not removed"
+        ));
         return Ok(false);
     }
     // git will not remove a worktree with its submodules checked out — every
@@ -279,18 +289,19 @@ fn remove(host: &dyn Host, sessions: &[Session], main: &Path, path: &Path) -> Re
     let submodules = host.read_file(&path.join(".gitmodules"))?.is_some();
     if submodules {
         if let Some(submodule) = git::unpushed_submodules(host, path)?.first() {
-            println!(
-                "{submodule} has commits no remote has, so {} is not removed",
-                path.display()
-            );
+            host.say(&format!(
+                "{submodule} in {name} has commits no remote has, so it is not removed"
+            ));
             return Ok(false);
         }
     }
     // Clean is not empty: what git ignores — builds, `.env` — goes with it.
-    if !host.confirm(&format!("Remove {}?", path.display()), false)? {
+    if !host.confirm(&format!("Remove {name}?"), default)? {
         return Ok(false);
     }
-    git::remove_worktree(host, main, path, submodules)?;
+    if let Err(failed) = git::remove_worktree(host, main, path, submodules) {
+        host.say(&failed.to_string());
+    }
     Ok(true)
 }
 
@@ -305,11 +316,15 @@ fn clean(
     git::prune_worktrees(host, &project.path)?;
     let outdated = git::outdated(host, config, &project.path)?;
     if outdated.is_empty() {
-        println!("no outdated worktrees in {}", project.name);
+        host.say(&format!(
+            "none of {}'s worktrees is merged or has lost its remote branch",
+            project.name
+        ));
     }
     let mut removed = false;
+    // Chosen by vibestation rather than by hand, so No is the default.
     for path in &outdated {
-        removed |= remove(host, sessions, &project.path, path)?;
+        removed |= remove(host, sessions, &project.path, path, false)?;
     }
     Ok(removed)
 }
@@ -322,7 +337,7 @@ fn add(host: &dyn Host, config: &mut Config) -> Result<()> {
     let typed = host.input("Path to the repository", "")?;
     let project = config::expand(&host.home()?, &typed);
     if !host.exists(&project.join(".git")) {
-        println!("{} is not a git repository", project.display());
+        host.say(&format!("{} is not a git repository", project.display()));
         return Ok(());
     }
     config::add_extra(host, config, project)
@@ -409,12 +424,12 @@ fn branch_for(
     default: &str,
 ) -> Result<PathBuf> {
     let worktree = naming::worktree_dir(main, &config.username, name);
-    let dirty = git::is_dirty(host, main)?;
+    let dirty = !git::changes(host, main)?.is_empty();
     if dirty {
-        println!(
+        host.say(&format!(
             "uncommitted changes in {}, so branching in place is not offered",
             main.display()
-        );
+        ));
     }
 
     let mut options = vec![format!("New worktree at {}", worktree.display())];
@@ -440,7 +455,7 @@ fn branch_for(
         _ => git::create_branch(host, main, name, &base).map(|()| main.to_path_buf()),
     }?;
     for failed in git::populate(host, &dir)? {
-        println!("{failed}; run it in {} to finish", dir.display());
+        host.say(&format!("{failed}; run it in {} to finish", dir.display()));
     }
     Ok(dir)
 }
@@ -460,10 +475,10 @@ fn base_ref(host: &dyn Host, config: &Config, dir: &Path, default: &str) -> Resu
     Ok(match out.succeeded() {
         true => format!("origin/{default}"),
         false => {
-            println!(
+            host.say(&format!(
                 "fetch failed ({}), branching from local {default}",
                 out.stderr.trim()
-            );
+            ));
             default.to_string()
         }
     })
