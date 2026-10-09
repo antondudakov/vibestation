@@ -1,6 +1,6 @@
-//! The one picker: live sessions, a separator, then projects ranked by
-//! frecency with their worktrees as indented children, and last the
-//! add-manually action.
+//! The one picker, as a tree: a block of live sessions, then a block of
+//! projects ranked by frecency, each with its worktrees indented beneath it,
+//! and last the add-manually action. Each block is headed when there are two.
 //!
 //! Every row is laid out in the same six columns — what it is, what it is
 //! called, where it is, its branch, what is running, how long since it was
@@ -20,10 +20,9 @@ pub enum Row {
     Project(usize),
     /// A project and one of its worktrees.
     Worktree(usize, usize),
-    /// The line between the sessions and everything else. Selectable, because
-    /// no prompt library can make a row inert; choosing it reopens the picker,
-    /// since decoration should cost nothing.
-    Separator,
+    /// `── sessions ──` or `── projects ──`: nothing to choose, so it has no
+    /// preview, which is what tells the list to pass over it.
+    Heading(&'static str),
     /// Take a repository by path, for one that lives outside those roots.
     AddManually,
 }
@@ -96,12 +95,16 @@ pub fn rows(
             Some(cells(&["", &project.name, &path, "", "", ""])),
         ));
         for (child, worktree) in project.worktrees.iter().enumerate() {
-            // The corner does the nesting the indent used to, which keeps the
-            // branch in the same column as every session's branch.
+            // Indented under its project as a tree draws it, in its own
+            // directory: a sibling of the checkout, not inside it.
+            let branch = match child + 1 == project.worktrees.len() {
+                true => "└─",
+                false => "├─",
+            };
             let cells = cells(&[
-                "└",
-                &base(&worktree.path),
                 "",
+                &format!("{branch} {}", base(&worktree.path)),
+                &abbreviate(&worktree.path.to_string_lossy(), home),
                 strip(&worktree.branch, username),
                 "",
                 "",
@@ -110,8 +113,10 @@ pub fn rows(
         }
     }
 
+    // One block needs no heading; two need telling apart.
     if !table.is_empty() {
-        table.push((Row::Separator, None));
+        table.insert(0, (Row::Heading("sessions"), None));
+        table.push((Row::Heading("projects"), None));
     }
     table.extend(below);
     // The escape hatch, last: nobody reaches for it until the list is wrong,
@@ -189,7 +194,7 @@ pub fn preview(
                 field("of", &projects[index].name),
             ]
         }
-        Row::Separator => return Vec::new(),
+        Row::Heading(_) => return Vec::new(),
         Row::AddManually => {
             return vec![
                 "Add a project by path".to_string(),
@@ -218,9 +223,9 @@ fn cells(fields: &[&str; COLUMNS]) -> Cells {
     (*fields).map(str::to_string)
 }
 
-/// Cap, fit, then draw. The separator and the action are not grid rows —
+/// Cap, fit, then draw. The headings and the action are not grid rows —
 /// they have nothing to line up with — so they are drawn from the row itself,
-/// starting where the name column starts.
+/// starting where the glyph column starts.
 fn render(mut table: Vec<(Row, Option<Cells>)>, budget: usize) -> Vec<(Row, String)> {
     cap(&mut table, budget);
     let widths = fit(&table, budget);
@@ -231,7 +236,12 @@ fn render(mut table: Vec<(Row, Option<Cells>)>, budget: usize) -> Vec<(Row, Stri
         .map(|(row, cells)| {
             let text = match (&cells, row) {
                 (Some(cells), _) => join(cells, &widths),
-                (None, Row::Separator) => "─".repeat(rule),
+                (None, Row::Heading(label)) => {
+                    format!(
+                        "── {label} {}",
+                        "─".repeat(rule.saturating_sub(label.len() + 4))
+                    )
+                }
                 (None, _) => "✚  add a project by path".to_string(),
             };
             // Whatever happened above, no row wraps.
@@ -260,7 +270,10 @@ fn cap(table: &mut [(Row, Option<Cells>)], budget: usize) {
 /// front, then the command, then the age, then the branch and the name are
 /// shortened. A priority list, not a layout engine.
 fn fit(table: &[(Row, Option<Cells>)], budget: usize) -> [usize; COLUMNS] {
+    // The glyph column stays when no row has a glyph, so names start where
+    // `✚ add a project` does.
     let mut widths = [0; COLUMNS];
+    widths[GLYPH] = 1;
     for cells in table.iter().filter_map(|(_, cells)| cells.as_ref()) {
         for column in 0..COLUMNS {
             widths[column] = widths[column].max(width(&cells[column]));

@@ -90,8 +90,8 @@ pub fn run(host: &dyn Host) -> Result<()> {
                 _ => None,
             },
         };
-        // The separator, Tab where there is no note to take, or ← back out of
-        // a menu: the list comes back as it was.
+        // Tab where there is no note to take, or ← back out of a menu: the
+        // list comes back as it was.
         let Some(action) = chosen else { continue };
 
         match action {
@@ -215,7 +215,7 @@ fn actions(
                 (Action::Remove(index, child), "Remove the worktree"),
             ]),
         ),
-        Row::Separator => (String::new(), Vec::new()),
+        Row::Heading(_) => (String::new(), Vec::new()),
         Row::AddManually => (String::new(), offer(&[(Action::Add, "")])),
     }
 }
@@ -368,14 +368,17 @@ fn open(
     // that already has a session is being chosen over that session's own row,
     // which is asking for something new rather than to resume. And in a
     // worktree the branch is the likely name rather than the only one — the
-    // same tree carries successive pieces of work — so it is offered: Enter
-    // takes it, declining names the work from scratch.
+    // same tree carries successive pieces of work — so it is offered beside a
+    // new session: Enter takes it, the other names the work from scratch.
     let started = !branch.is_empty() && branch != default;
     let running = sessions.iter().any(|session| session.path == dir);
     let named = naming::from_branch(&config.username, &branch);
     let keep = started
         && !running
-        && (worktree.is_none() || host.confirm(&format!("Open {named}?"), true)?);
+        && (worktree.is_none() || {
+            let choices = [format!("Open {named}"), "New session…".to_string()];
+            host.select(&picker::base(dir), &choices)? == 0
+        });
     let name = match keep {
         true => named,
         false => ask(host, config)?,

@@ -44,7 +44,10 @@ fn rows(host: &FakeHost) -> Vec<String> {
 fn adding_is_the_last_row_and_refreshing_is_a_key() {
     let host = host().answer(Answer::Abort);
 
-    assert_eq!(rows(&host), ["api  ~/code/api", "✚  add a project by path"]);
+    assert_eq!(
+        rows(&host),
+        ["   api  ~/code/api", "✚  add a project by path"]
+    );
 }
 
 #[test]
@@ -54,8 +57,8 @@ fn left_rescans_the_roots_and_rewrites_the_cache() {
     assert_eq!(
         rows(&host),
         [
-            "api    ~/code/api",
-            "fresh  ~/code/fresh",
+            "   api    ~/code/api",
+            "   fresh  ~/code/fresh",
             "✚  add a project by path",
         ],
         "the picker reopens over what the rescan found"
@@ -132,9 +135,9 @@ fn an_added_repository_lands_in_the_config_and_survives_a_refresh() {
     assert_eq!(
         rows,
         [
-            "api    ~/code/api",
-            "fresh  ~/code/fresh",
-            "tool   ~/vendor/tool",
+            "   api    ~/code/api",
+            "   fresh  ~/code/fresh",
+            "   tool   ~/vendor/tool",
             "✚  add a project by path",
         ],
         "the added project is still listed after the rescan"

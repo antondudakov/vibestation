@@ -311,7 +311,8 @@ fn nothing_is_fetched_on_the_path_to_an_existing_session() {
         .file(CACHE, r#"[]"#)
         .succeeds(LIST, "0\t0\t/home/dev/code/api\tnvim\t\tada/VBSN-4-tidy\n")
         .succeeds(BRANCH, "ada/VBSN-4-tidy\n")
-        .answer(Answer::Select(0));
+        // 0 is the sessions heading.
+        .answer(Answer::Select(1));
 
     vibestation::run(&host).unwrap();
 

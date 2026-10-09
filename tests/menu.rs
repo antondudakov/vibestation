@@ -14,8 +14,9 @@ const STATE: &str = "/home/dev/.vibestation/state.json";
 /// projects: `api` with two worktrees, found by the scan, and `tool`, added by
 /// hand. The rows are:
 ///
-/// 0 the session · 1 the separator · 2 `api` · 3 its first worktree ·
-/// 4 its second, the busy one · 5 `tool` · 6 add a project
+/// 0 the sessions heading · 1 the session · 2 the projects heading · 3 `api` ·
+/// 4 its first worktree · 5 its second, the busy one · 6 `tool` · 7 add a
+/// project
 fn host() -> FakeHost {
     FakeHost::new()
         .file(
@@ -62,7 +63,7 @@ fn ran(host: &FakeHost, command: &str) -> bool {
 
 #[test]
 fn right_on_a_session_offers_it_and_left_goes_back_to_the_list() {
-    let host = host().answers([Answer::Right(0), Answer::Left, Answer::Abort]);
+    let host = host().answers([Answer::Right(1), Answer::Left, Answer::Abort]);
 
     drive(&host);
 
@@ -80,7 +81,7 @@ fn right_on_a_session_offers_it_and_left_goes_back_to_the_list() {
 
 #[test]
 fn a_session_can_be_joined_killed_or_renamed() {
-    let host = host().answers([Answer::Right(0), Answer::Abort]);
+    let host = host().answers([Answer::Right(1), Answer::Abort]);
 
     drive(&host);
 
@@ -89,7 +90,7 @@ fn a_session_can_be_joined_killed_or_renamed() {
 
 #[test]
 fn join_from_the_menu_is_what_enter_on_the_row_does() {
-    let host = host().answers([Answer::Right(0), Answer::Select(0)]);
+    let host = host().answers([Answer::Right(1), Answer::Select(0)]);
 
     vibestation::run(&host).unwrap();
 
@@ -102,7 +103,7 @@ fn join_from_the_menu_is_what_enter_on_the_row_does() {
 #[test]
 fn kill_asks_first_and_the_list_is_read_again_after() {
     let kept = host().answers([
-        Answer::Right(0),
+        Answer::Right(1),
         Answer::Select(1),
         Answer::Confirm(false),
         Answer::Abort,
@@ -110,7 +111,7 @@ fn kill_asks_first_and_the_list_is_read_again_after() {
     let killed = host()
         .succeeds("tmux kill-session -t ada/VBSN-2-busy", "")
         .answers([
-            Answer::Right(0),
+            Answer::Right(1),
             Answer::Select(1),
             Answer::Confirm(true),
             Answer::Abort,
@@ -139,7 +140,7 @@ fn rename_offers_the_name_to_edit_and_tmux_is_told_the_new_one() {
     let host = host()
         .succeeds("tmux rename-session -t ada/VBSN-2-busy ada/VBSN-2-v1-2", "")
         .answers([
-            Answer::Right(0),
+            Answer::Right(1),
             Answer::Select(2),
             Answer::text("ada/VBSN-2-v1.2 "),
             Answer::Abort,
@@ -167,7 +168,7 @@ fn a_rename_tmux_refuses_leaves_the_picker_open() {
             "duplicate session: taken",
         )
         .answers([
-            Answer::Right(0),
+            Answer::Right(1),
             Answer::Select(2),
             Answer::text("taken"),
             Answer::Abort,
@@ -189,7 +190,7 @@ fn tab_on_a_session_offers_its_note_to_edit_and_tmux_keeps_it() {
             "",
         )
         .answers([
-            Answer::Tab(0),
+            Answer::Tab(1),
             Answer::text("  fixing\tthe  arrows "),
             Answer::Abort,
         ]);
@@ -217,8 +218,8 @@ fn an_emptied_note_is_taken_off_and_tab_elsewhere_does_nothing() {
     let host = host()
         .succeeds("tmux set-option -u -t ada/VBSN-2-busy @note", "")
         .answers([
-            Answer::Tab(2),
-            Answer::Tab(0),
+            Answer::Tab(3),
+            Answer::Tab(1),
             Answer::text(" "),
             Answer::Abort,
         ]);
@@ -251,7 +252,7 @@ fn the_row_under_the_cursor_is_previewed_in_full_with_its_note() {
     let previews = host.previews();
 
     assert_eq!(
-        previews[0],
+        previews[1],
         [
             "ada/VBSN-2-busy",
             "dir     ~/code/api-VBSN-2/src",
@@ -263,9 +264,12 @@ fn the_row_under_the_cursor_is_previewed_in_full_with_its_note() {
             "Notes: fixing the arrows",
         ]
     );
-    assert!(previews[1].is_empty(), "the separator has nothing to show");
+    assert!(
+        previews[0].is_empty() && previews[2].is_empty(),
+        "a heading has nothing to show"
+    );
     assert_eq!(
-        previews[4][..4],
+        previews[5][..4],
         [
             "api-VBSN-2",
             "dir     ~/code/api-VBSN-2",
@@ -284,7 +288,7 @@ fn the_row_under_the_cursor_is_previewed_in_full_with_its_note() {
 fn a_scanned_project_offers_a_session_or_the_editor() {
     let host = host()
         .editor("code -w")
-        .answers([Answer::Right(2), Answer::Abort]);
+        .answers([Answer::Right(3), Answer::Abort]);
 
     drive(&host);
 
@@ -301,7 +305,7 @@ fn a_scanned_project_offers_a_session_or_the_editor() {
 fn the_editor_opens_in_the_directory_and_counts_as_an_open() {
     let host = host()
         .editor("/usr/bin/nvim")
-        .answers([Answer::Right(3), Answer::Select(1)]);
+        .answers([Answer::Right(4), Answer::Select(1)]);
 
     vibestation::run(&host).unwrap();
 
@@ -319,7 +323,7 @@ fn the_editor_opens_in_the_directory_and_counts_as_an_open() {
 
 #[test]
 fn a_project_added_by_hand_can_be_taken_off_the_list() {
-    let host = host().answers([Answer::Right(5), Answer::Select(2), Answer::Abort]);
+    let host = host().answers([Answer::Right(6), Answer::Select(2), Answer::Abort]);
 
     drive(&host);
 
@@ -352,7 +356,7 @@ fn a_clean_worktree_is_removed_after_asking_and_its_branch_is_left() {
             "",
         )
         .answers([
-            Answer::Right(3),
+            Answer::Right(4),
             Answer::Select(2),
             Answer::Confirm(true),
             Answer::Abort,
@@ -406,7 +410,7 @@ fn a_worktree_with_submodules_is_forced_once_they_hold_nothing_unpushed() {
             "",
         )
         .answers([
-            Answer::Right(3),
+            Answer::Right(4),
             Answer::Select(2),
             Answer::Confirm(true),
             Answer::Abort,
@@ -436,7 +440,7 @@ fn a_worktree_whose_submodule_holds_unpushed_commits_is_not_removed() {
             &format!("/home/dev/code/api-VBSN-1 $ {SUBMODULES}"),
             "lib\n",
         )
-        .answers([Answer::Right(3), Answer::Select(2), Answer::Abort]);
+        .answers([Answer::Right(4), Answer::Select(2), Answer::Abort]);
 
     drive(&host);
 
@@ -457,7 +461,7 @@ fn a_declined_removal_removes_nothing() {
     let host = host()
         .succeeds(&format!("/home/dev/code/api-VBSN-1 $ {STATUS}"), "")
         .answers([
-            Answer::Right(3),
+            Answer::Right(4),
             Answer::Select(2),
             Answer::Confirm(false),
             Answer::Abort,
@@ -475,7 +479,7 @@ fn a_dirty_worktree_is_not_removed_and_nothing_is_asked() {
             &format!("/home/dev/code/api-VBSN-1 $ {STATUS}"),
             "?? notes.txt\n M src/lib.rs\n",
         )
-        .answers([Answer::Right(3), Answer::Select(2), Answer::Abort]);
+        .answers([Answer::Right(4), Answer::Select(2), Answer::Abort]);
 
     drive(&host);
 
@@ -494,7 +498,7 @@ fn a_dirty_worktree_is_not_removed_and_nothing_is_asked() {
 
 #[test]
 fn a_worktree_with_a_session_in_it_is_not_removed() {
-    let host = host().answers([Answer::Right(4), Answer::Select(2), Answer::Abort]);
+    let host = host().answers([Answer::Right(5), Answer::Select(2), Answer::Abort]);
 
     drive(&host);
 
@@ -522,7 +526,7 @@ fn a_removal_git_refuses_is_said_and_the_list_rescanned_not_fatal() {
             "fatal: cannot remove a locked working tree",
         )
         .answers([
-            Answer::Right(3),
+            Answer::Right(4),
             Answer::Select(2),
             Answer::Confirm(true),
             Answer::Abort,
@@ -596,7 +600,7 @@ fn clean_up_asks_about_each_outdated_worktree_and_only_those() {
             "",
         )
         .answers([
-            Answer::Right(2),
+            Answer::Right(3),
             Answer::Select(2),
             Answer::Confirm(true),
             Answer::Confirm(false),
@@ -641,7 +645,7 @@ fn clean_up_with_nothing_outdated_asks_nothing() {
             "git for-each-ref --format=%(refname:short)\t%(upstream:track) refs/heads",
             "",
         )
-        .answers([Answer::Right(2), Answer::Select(2), Answer::Abort]);
+        .answers([Answer::Right(3), Answer::Select(2), Answer::Abort]);
 
     drive(&host);
 
@@ -660,10 +664,10 @@ fn clean_up_with_nothing_outdated_asks_nothing() {
 
 #[test]
 fn right_on_a_row_with_nothing_more_to_offer_opens_nothing() {
-    let separator = host().answers([Answer::Right(1), Answer::Abort]);
-    let add = host().answers([Answer::Right(6), Answer::Abort]);
+    let heading = host().answers([Answer::Right(2), Answer::Abort]);
+    let add = host().answers([Answer::Right(7), Answer::Abort]);
 
-    for host in [&separator, &add] {
+    for host in [&heading, &add] {
         drive(host);
         assert_eq!(
             host.prompts(),

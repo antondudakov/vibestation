@@ -179,16 +179,17 @@ fn a_worktree_is_named_for_the_branch_it_is_on_now_not_the_cached_one() {
             "tmux new-session -d -s ada/VBSN-2-retries -c /home/dev/code/api-VBSN-1",
             "",
         )
-        .answers([Answer::Select(1), Answer::Confirm(true)]);
+        .answers([Answer::Select(1), Answer::Select(0)]);
 
     vibestation::run(&host).unwrap();
 
     assert_eq!(
         host.prompts(),
-        ["Open  2 projects", "Open ada/VBSN-2-retries? [Y/n]"],
+        ["Open  2 projects", "api-VBSN-1"],
         "the name offered is the branch git reports, not ada/VBSN-1-init from \
          the cache; taking it is one keypress"
     );
+    assert_eq!(host.options(), ["Open ada/VBSN-2-retries", "New session…"]);
     assert_eq!(
         created(&host),
         ["tmux new-session -d -s ada/VBSN-2-retries -c /home/dev/code/api-VBSN-1"],
@@ -209,7 +210,7 @@ fn declining_the_offered_name_names_the_work_from_scratch() {
         )
         .answers([
             Answer::Select(1),
-            Answer::Confirm(false),
+            Answer::Select(1),
             Answer::text("VBSN-4 picker rows"),
             Answer::text("ada/something-else"),
             Answer::Select(2),
@@ -221,7 +222,7 @@ fn declining_the_offered_name_names_the_work_from_scratch() {
         host.prompts(),
         [
             "Open  2 projects",
-            "Open ada/VBSN-2-retries? [Y/n]",
+            "api-VBSN-1",
             "What are you working on? []",
             "Session name [ada/VBSN-4-picker-rows]",
             "Create branch ada/something-else?",
@@ -268,9 +269,10 @@ fn a_project_whose_session_is_running_can_still_start_new_work() {
             "",
         )
         .answers([
-            // Row 0 is the running session, 1 the separator, 2 `api` with its
-            // worktree at 3, and 4 is `notes` — the project the session is in.
-            Answer::Select(4),
+            // Row 1 is the running session under its heading, 2 the projects
+            // heading, 3 `api` with its worktree at 4, and 5 is `notes` — the
+            // project the session is in.
+            Answer::Select(5),
             Answer::text("VBSN-4 picker rows"),
             Answer::text("ada/VBSN-4-picker-rows"),
             Answer::Select(0),
@@ -324,7 +326,7 @@ fn the_open_counts_towards_the_project_not_the_worktree() {
             "tmux new-session -d -s ada/VBSN-2-retries -c /home/dev/code/api-VBSN-1",
             "",
         )
-        .answers([Answer::Select(1), Answer::Confirm(true)]);
+        .answers([Answer::Select(1), Answer::Select(0)]);
 
     vibestation::run(&host).unwrap();
 

@@ -62,20 +62,22 @@ fn sessions_come_first_then_projects_with_their_worktrees_beneath() {
     assert_eq!(
         rows(&host),
         [
-            "○  ada/VBSN-4-picker   ~/code/vibestation  VBSN-4-picker  nvim",
-            "●  notes-scratch       /etc                               zsh",
-            "──────────────────────────────────────────────────────────────",
-            "   vibestation         ~/code/vibestation",
-            "└  vibestation-VBSN-1                      VBSN-1-init",
-            "└  vibestation-VBSN-9                      VBSN-9-fix",
-            "   api                 ~/code/api",
-            "   notes               ~/notes",
+            "── sessions ────────────────────────────────────────────────────────────",
+            "○  ada/VBSN-4-picker      ~/code/vibestation         VBSN-4-picker  nvim",
+            "●  notes-scratch          /etc                                      zsh",
+            "── projects ────────────────────────────────────────────────────────────",
+            "   vibestation            ~/code/vibestation",
+            "   ├─ vibestation-VBSN-1  ~/code/vibestation-VBSN-1  VBSN-1-init",
+            "   └─ vibestation-VBSN-9  ~/code/vibestation-VBSN-9  VBSN-9-fix",
+            "   api                    ~/code/api",
+            "   notes                  ~/notes",
             "✚  add a project by path",
         ],
         "a project with a session of its own is still listed below it — the \
          session row resumes that work, the project row starts new work in the \
-         same repository — each worktree row carries its branch in the same \
-         column as the sessions above, and the add action comes last"
+         same repository — each worktree is indented beneath its project, in \
+         its own directory, with its branch in the same column as the sessions \
+         above, and the add action comes last"
     );
 }
 
@@ -91,7 +93,7 @@ fn projects_are_ranked_by_frecency() {
     let rows = rows(&host);
 
     assert!(
-        rows[3].trim_start().starts_with("notes"),
+        rows[4].trim_start().starts_with("notes"),
         "rows were {rows:?}"
     );
     assert!(
@@ -103,7 +105,7 @@ fn projects_are_ranked_by_frecency() {
 
 #[test]
 fn choosing_a_session_outside_tmux_attaches_to_it() {
-    let host = host().answer(Answer::Select(1));
+    let host = host().answer(Answer::Select(2));
 
     vibestation::run(&host).unwrap();
 
@@ -124,7 +126,7 @@ fn choosing_a_session_inside_tmux_switches_the_client_instead() {
     let host = host()
         .in_tmux(true)
         .succeeds(DISPLAY, "ada/VBSN-4-picker\n")
-        .answer(Answer::Select(0));
+        .answer(Answer::Select(1));
 
     vibestation::run(&host).unwrap();
 
@@ -136,8 +138,9 @@ fn choosing_a_session_inside_tmux_switches_the_client_instead() {
 }
 
 #[test]
-fn the_separator_reopens_the_picker_and_an_abort_leaves_it() {
-    let separator = host().answers([Answer::Select(2), Answer::Abort]);
+fn a_heading_reopens_the_picker_and_an_abort_leaves_it() {
+    // The list never lets the cursor rest on one; the fake can still choose it.
+    let separator = host().answers([Answer::Select(3), Answer::Abort]);
     let abort = host().answer(Answer::Abort);
 
     vibestation::run(&separator).unwrap_err();
@@ -177,15 +180,15 @@ fn no_tmux_server_leaves_a_picker_of_projects_alone() {
     assert_eq!(
         rows(&host),
         [
-            "   vibestation         ~/code/vibestation",
-            "└  vibestation-VBSN-1                      VBSN-1-init",
-            "└  vibestation-VBSN-9                      VBSN-9-fix",
-            "   api                 ~/code/api",
-            "   notes               ~/notes",
+            "   vibestation            ~/code/vibestation",
+            "   ├─ vibestation-VBSN-1  ~/code/vibestation-VBSN-1  VBSN-1-init",
+            "   └─ vibestation-VBSN-9  ~/code/vibestation-VBSN-9  VBSN-9-fix",
+            "   api                    ~/code/api",
+            "   notes                  ~/notes",
             "✚  add a project by path",
         ],
-        "a cold start opens the picker rather than erroring, and with no \
-         sessions above there is no separator"
+        "a cold start opens the picker rather than erroring, and with one \
+         block there is nothing to head"
     );
 }
 
@@ -202,19 +205,29 @@ fn columns_line_up_across_sessions_projects_and_worktrees() {
     let rows = rows(&host);
 
     assert_eq!(
-        column(&rows[0], "~/code/vibestation"),
-        column(&rows[6], "~/code/api"),
+        column(&rows[1], "~/code/vibestation"),
+        column(&rows[7], "~/code/api"),
         "a session's directory and a project's start in the same column: {rows:?}"
     );
     assert_eq!(
-        column(&rows[0], "VBSN-4-picker  nvim"),
-        column(&rows[4], "VBSN-1-init"),
+        column(&rows[1], "~/code/vibestation"),
+        column(&rows[5], "~/code/vibestation-VBSN-1"),
+        "and so does a worktree's: {rows:?}"
+    );
+    assert_eq!(
+        column(&rows[1], "VBSN-4-picker  nvim"),
+        column(&rows[5], "VBSN-1-init"),
         "and so do a session's branch and a worktree's: {rows:?}"
     );
     assert_eq!(
-        rows[2].chars().count(),
-        rows[0].chars().count().max(rows[3].chars().count()),
-        "the separator spans the grid it separates: {rows:?}"
+        column(&rows[4], "vibestation") + 3,
+        column(&rows[5], "vibestation-VBSN-1"),
+        "a worktree's name is indented under its project's: {rows:?}"
+    );
+    assert_eq!(
+        rows[3].chars().count(),
+        rows[1].chars().count().max(rows[5].chars().count()),
+        "a heading spans the grid it heads: {rows:?}"
     );
 }
 
@@ -255,7 +268,7 @@ fn a_row_that_used_to_wrap_now_fits_the_terminal() {
             "80 columns less the two inquire writes before every option: {row:?}"
         );
     }
-    assert_eq!(rows[0].chars().count(), 78, "and it uses what it is given");
+    assert_eq!(rows[1].chars().count(), 78, "and it uses what it is given");
 }
 
 #[test]
@@ -268,7 +281,7 @@ fn a_narrow_terminal_gives_up_the_command_before_it_destroys_the_path() {
         assert!(row.chars().count() <= 58, "{row:?}");
     }
     assert!(
-        !rows[0].contains("claude"),
+        !rows[1].contains("claude"),
         "the command goes before the branch or the name: {rows:?}"
     );
 }
@@ -289,11 +302,11 @@ fn your_own_prefix_comes_off_a_branch_and_another_owners_stays() {
     let rows = rows(&host);
 
     assert!(
-        rows[0].contains("VBSN-4-picker") && !rows[0].contains("ada/"),
+        rows[1].contains("VBSN-4-picker") && !rows[1].contains("ada/"),
         "your own name on every row is your own name, repeated: {rows:?}"
     );
     assert!(
-        rows[1].contains("grace/VBSN-2-review"),
+        rows[2].contains("grace/VBSN-2-review"),
         "someone else's prefix is information: {rows:?}"
     );
 }
@@ -309,10 +322,10 @@ fn the_glyph_says_what_each_row_is() {
 
     assert_eq!(
         glyphs,
-        ['○', '●', '─', ' ', '└', '└', ' ', ' ', '✚'],
-        "detached, attached elsewhere, the separator, a project with its two \
-         worktrees, two more projects, and the escape hatch — readable \
-         at any scroll position"
+        ['─', '○', '●', '─', ' ', ' ', ' ', ' ', ' ', '✚'],
+        "a heading, detached, attached elsewhere, a heading, a project with \
+         its two worktrees, two more projects, and the escape hatch — \
+         readable at any scroll position"
     );
 }
 
@@ -333,12 +346,12 @@ fn one_long_worktree_name_does_not_widen_the_name_column() {
     let rows = rows(&host);
 
     assert!(
-        rows[4].contains('…'),
+        rows[5].contains('…'),
         "the long name is the one that gives way: {rows:?}"
     );
     assert_eq!(
-        column(&rows[5], "~/code/api"),
-        column(&rows[0], "~/code/vibestation"),
+        column(&rows[6], "~/code/api"),
+        column(&rows[1], "~/code/vibestation"),
         "and the column it is in stays where it was: {rows:?}"
     );
 }
@@ -361,11 +374,11 @@ fn the_session_you_are_in_leads_the_list_and_says_how_long_it_has_been() {
     let rows = rows(&host);
 
     assert!(
-        rows[0].starts_with('▶') && rows[0].ends_with("1h"),
+        rows[1].starts_with('▶') && rows[1].ends_with("1h"),
         "the session you are in, an hour since you were last in it: {rows:?}"
     );
     assert!(
-        rows[1].starts_with('●'),
+        rows[2].starts_with('●'),
         "and the one someone left attached elsewhere: {rows:?}"
     );
 }

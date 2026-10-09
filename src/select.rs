@@ -29,7 +29,9 @@ pub struct Ask<'a> {
     pub message: &'a str,
     pub options: &'a [String],
     /// Beside the list, a panel for the option under the cursor. Empty for no
-    /// panel, as is any one option's.
+    /// panel. An option whose own is empty is a heading — `── projects ──` —
+    /// drawn dim, passed over by the cursor and hidden by a filter: it has
+    /// nothing to show because there is nothing there to choose.
     pub previews: &'a [Vec<String>],
     /// The keys this list binds beyond those every list does, for the line
     /// under it.
@@ -59,18 +61,61 @@ struct List<'a> {
 
 impl<'a> List<'a> {
     fn new(ask: &'a Ask<'a>) -> Self {
-        List {
+        let mut list = List {
             ask,
             filter: Line::default(),
             shown: (0..ask.options.len()).collect(),
             cursor: ask.cursor.min(ask.options.len().saturating_sub(1)),
             // inquire's scorer, so a filter finds what it always found.
             matcher: SkimMatcherV2::default().ignore_case(),
+        };
+        list.settle(true);
+        list
+    }
+
+    fn heading(&self, index: usize) -> bool {
+        self.ask.previews.get(index).is_some_and(Vec::is_empty)
+    }
+
+    /// The option under the cursor, which is never a heading.
+    fn highlighted(&self) -> Option<usize> {
+        self.shown
+            .get(self.cursor)
+            .copied()
+            .filter(|index| !self.heading(*index))
+    }
+
+    /// One row up or down, over any heading, wrapping at the ends.
+    fn step(&mut self, forward: bool) {
+        let len = self.shown.len();
+        for _ in 0..len {
+            self.cursor = match forward {
+                true => (self.cursor + 1) % len,
+                false => self.cursor.checked_sub(1).unwrap_or(len - 1),
+            };
+            if !self.heading(self.shown[self.cursor]) {
+                return;
+            }
         }
     }
 
-    fn highlighted(&self) -> Option<usize> {
-        self.shown.get(self.cursor).copied()
+    /// Off a heading the cursor jumped onto: the nearest row the way it was
+    /// going, else the nearest the other way.
+    fn settle(&mut self, forward: bool) {
+        let len = self.shown.len();
+        if len == 0 {
+            return;
+        }
+        let choosable = |at: &usize| !self.heading(self.shown[*at]);
+        let after = || (self.cursor..len).find(choosable);
+        let before = || (0..=self.cursor).rev().find(choosable);
+        let found = match forward {
+            true => after().or_else(before),
+            false => before().or_else(after),
+        };
+        if let Some(at) = found {
+            self.cursor = at;
+        }
     }
 
     /// Score every option against the filter. Ties keep list order — the list
@@ -83,6 +128,8 @@ impl<'a> List<'a> {
             .options
             .iter()
             .enumerate()
+            // A heading heads nothing once the rows under it are filtered.
+            .filter(|(index, _)| typed.is_empty() || !self.heading(*index))
             .filter_map(|(index, option)| Some((index, self.matcher.fuzzy_match(option, &typed)?)))
             .collect();
         scored.sort_by_key(|(_, score)| Reverse(*score));
@@ -90,6 +137,7 @@ impl<'a> List<'a> {
         if shown != self.shown {
             self.shown = shown;
             self.cursor = 0;
+            self.settle(true);
         }
     }
 }
@@ -117,16 +165,24 @@ fn apply(list: &mut List, key: KeyEvent, page: usize) -> Step {
 
     match (key.code, ctrl, alt) {
         // Up and down wrap; a page and the ends do not.
-        (KeyCode::Up, false, false) | (KeyCode::Char('p'), true, false) => {
-            list.cursor = list.cursor.checked_sub(1).unwrap_or(last)
+        (KeyCode::Up, false, false) | (KeyCode::Char('p'), true, false) => list.step(false),
+        (KeyCode::Down, false, false) | (KeyCode::Char('n'), true, false) => list.step(true),
+        (KeyCode::PageUp, ..) => {
+            list.cursor = list.cursor.saturating_sub(page);
+            list.settle(false)
         }
-        (KeyCode::Down, false, false) | (KeyCode::Char('n'), true, false) => {
-            list.cursor = (list.cursor + 1) % list.shown.len().max(1)
+        (KeyCode::PageDown, ..) => {
+            list.cursor = (list.cursor + page).min(last);
+            list.settle(true)
         }
-        (KeyCode::PageUp, ..) => list.cursor = list.cursor.saturating_sub(page),
-        (KeyCode::PageDown, ..) => list.cursor = (list.cursor + page).min(last),
-        (KeyCode::Home, ..) => list.cursor = 0,
-        (KeyCode::End, ..) => list.cursor = last,
+        (KeyCode::Home, ..) => {
+            list.cursor = 0;
+            list.settle(true)
+        }
+        (KeyCode::End, ..) => {
+            list.cursor = last;
+            list.settle(false)
+        }
 
         // ← is about the whole list, so it needs no row under the cursor.
         (KeyCode::Left, false, false) if list.ask.arrows => return Step::Chose(Pick::Left),
@@ -245,13 +301,15 @@ fn read(ask: &Ask, width: usize, page: usize) -> Result<Pick> {
             return Err(Aborted.into());
         };
         // A chosen row leaves the answered line behind. The arrows and Tab
-        // leave nothing: what they open is drawn where the window was.
+        // leave nothing: what they open is drawn where the window was. A grid
+        // row is padded for the grid, which a line on its own has no use for.
         if let Pick::Enter(index) = pick {
+            let answer = ask.options[index].split_whitespace().collect::<Vec<_>>();
             queue!(
                 out,
                 PrintStyledContent(paint(">", Color::Green)),
                 Print(format!(" {} ", ask.message)),
-                PrintStyledContent(paint(ask.options[index].trim(), Color::Cyan)),
+                PrintStyledContent(paint(&answer.join(" "), Color::Cyan)),
                 Print("\r\n"),
             )?;
         }
@@ -383,19 +441,20 @@ fn frame(list: &List, width: usize, page: usize) -> (Window, Option<usize>) {
             }
             None => String::new(),
         };
-        let here = rows.get(at).is_some() && top + at == list.cursor;
+        let color = match rows.get(at) {
+            Some(_) if top + at == list.cursor => Some(Color::Cyan),
+            Some(&index) if list.heading(index) => DIM,
+            _ => None,
+        };
         match panel.get(at) {
             Some(boxed) => {
-                line.push(
-                    &format!("{:<left$}", cut(&text, left)),
-                    here.then_some(Color::Cyan),
-                );
+                line.push(&format!("{:<left$}", cut(&text, left)), color);
                 for (text, color) in boxed {
                     line.push(text, *color);
                 }
             }
             None => {
-                line.push(&text, here.then_some(Color::Cyan));
+                line.push(&text, color);
             }
         }
         lines.push(line.spans);
@@ -794,16 +853,68 @@ mod tests {
         assert_eq!(window[4], format!("{:<80}  │ {:<34} │", "  two", "first"));
         assert_eq!(window[5], format!("{:<80}  └{}┘", "", "─".repeat(36)));
 
-        let window = text(&ask, &[plain(KeyCode::Down)], 120);
-        assert_eq!(
-            &window[3..5],
-            ["  one", "❯ two"],
-            "a row with nothing to preview has no panel"
-        );
         assert_eq!(
             text(&ask, &[], 99)[3],
             "❯ one",
             "nor has a terminal too narrow for one"
+        );
+    }
+
+    #[test]
+    fn a_heading_is_passed_over_and_filtered_away() {
+        use KeyCode::{Down, End, Enter, Home, PageDown, PageUp, Up};
+        let options = ["── sessions", "one", "── projects", "two", "three"]
+            .map(String::from)
+            .to_vec();
+        let previews = [
+            vec![],
+            vec!["1".into()],
+            vec![],
+            vec!["2".into()],
+            vec!["3".into()],
+        ];
+        let ask = Ask {
+            previews: &previews,
+            ..picker(&options)
+        };
+
+        assert_eq!(
+            press_at(&ask, &[plain(Enter)]),
+            Step::Chose(Pick::Enter(1)),
+            "the cursor starts below the first heading"
+        );
+        assert_eq!(
+            press_at(&ask, &[plain(Down), plain(Enter)]),
+            Step::Chose(Pick::Enter(3))
+        );
+        assert_eq!(
+            press_at(&ask, &[plain(Up), plain(Enter)]),
+            Step::Chose(Pick::Enter(4)),
+            "up from the first row still wraps to the last"
+        );
+        assert_eq!(
+            press_at(&ask, &[plain(End), plain(Home), plain(Enter)]),
+            Step::Chose(Pick::Enter(1))
+        );
+        assert_eq!(
+            press_at(&ask, &[plain(PageDown), plain(PageUp), plain(Enter)]),
+            Step::Chose(Pick::Enter(1)),
+            "a page that lands on a heading moves off it"
+        );
+        let mut keys = typed("o");
+        keys.push(plain(Enter));
+        assert_eq!(
+            press_at(&ask, &keys),
+            Step::Chose(Pick::Enter(1)),
+            "`sessions` and `projects` have an o, and are not rows"
+        );
+
+        let window = text(&ask, &typed("o"), 99);
+        assert!(
+            !window
+                .iter()
+                .any(|line| line.contains("sessions") || line.contains("projects")),
+            "{window:?}"
         );
     }
 

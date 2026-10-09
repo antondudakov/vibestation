@@ -4,21 +4,21 @@ One command, one fuzzy picker: your live tmux sessions on top, your git
 projects below, and a session waiting at the end of either.
 
 ```
-──────────────────────────────────────────────────────────────────────────────────────────────────────
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 │ Open  2 running · 3 projects  type to filter
 
-❯ ▶  ada/VBSN-4-picker   ~/code/vibestation  VBSN-4-picker  nvim  2m   ┌──────────────────────────────┐
-  ●  notes-scratch       /etc                               zsh   1h   │ ada/VBSN-4-picker            │
-  ─────────────────────────────────────────────────────────────────    │ dir     ~/code/vibestation   │
-     api                 ~/code/api                                    │ branch  ada/VBSN-4-picker    │
-  └  api-VBSN-7-retries                      VBSN-7-retries            │ running nvim                 │
-     notes               ~/notes                                       │ seen    2m ago               │
-     vibestation         ~/code/vibestation                            │                              │
-  ✚  add a project by path                                             │ → Join · Kill · Rename       │
-                                                                       │                              │
-                                                                       │ Notes: fixing the arrows     │
-                                                                       └──────────────────────────────┘
-──────────────────────────────────────────────────────────────────────────────────────────────────────
+  ── sessions ───────────────────────────────────────────────────────────────    ┌──────────────────────────────┐
+❯ ▶  ada/VBSN-4-picker      ~/code/vibestation         VBSN-4-picker   nvim  2m   │ ada/VBSN-4-picker            │
+  ●  notes-scratch          /etc                                       zsh   1h   │ dir     ~/code/vibestation   │
+  ── projects ───────────────────────────────────────────────────────────────    │ branch  ada/VBSN-4-picker    │
+     api                    ~/code/api                                            │ running nvim                 │
+     └─ api-VBSN-7-retries  ~/code/api-VBSN-7-retries  VBSN-7-retries             │ seen    2m ago               │
+     notes                  ~/notes                                               │                              │
+     vibestation            ~/code/vibestation                                    │ → Join · Kill · Rename       │
+  ✚  add a project by path                                                        │                              │
+                                                                                  │ Notes: fixing the arrows     │
+                                                                                  └──────────────────────────────┘
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Enter to select · ↑/↓ to navigate · type to filter · ← to refresh · → for more · Tab to add notes · Esc to cancel
 ```
 
@@ -57,10 +57,12 @@ First run asks one question — where your projects live — and writes
 One picker, always, as tall as your terminal. Live tmux sessions first, each
 with its directory, the branch checked out there, what is running in the active
 pane, and how long since a client last had it — most recently left first, so
-the session you want is usually the first row. Then a separator, then your git
-projects ranked by how often and how recently you open them, each with its
-worktrees beneath it. Typing filters every row at once, so a ticket identifier
-reaches its worktree directly.
+the session you want is usually the first row. Then your git projects, ranked
+by how often and how recently you open them, each with its worktrees indented
+beneath it as a tree draws them, in their own directories. Each block is headed
+when there are two; the cursor passes over a heading, and a filter hides it.
+Typing filters every row at once, so a ticket identifier reaches its worktree
+directly.
 
 Every row is laid out in the same columns, padded to the widths of the whole
 list, so sessions, projects and worktrees read as one grid rather than three.
@@ -76,8 +78,7 @@ readable:
 | `▶` | the session you are in |
 | `●` | a session attached somewhere else |
 | `○` | a session running with nobody in it |
-| _blank_ | a project |
-| `└` | one of that project's worktrees |
+| _blank_ | a project, and under it, after `├─` or `└─`, its worktrees |
 
 Your own username is stripped from every branch shown, since it is on all of
 them. The prompt line above the list — the one line that never scrolls — says
@@ -88,8 +89,7 @@ resumes the work running there; the project row starts something else in the
 same repository, in a worktree of its own.
 
 Choosing a session joins it: `switch-client` when you are already inside tmux,
-`attach-session` when you are not. Esc costs nothing and emits nothing, and so
-does the separator — choosing decoration just reopens the list.
+`attach-session` when you are not. Esc costs nothing and emits nothing.
 
 Every prompt is drawn in the same window, the one Claude Code asks its
 questions in: a rule, the question, the options with `❯` on the one under the
@@ -156,9 +156,10 @@ which knows only where a worktree was pointing the last time you refreshed.
 
 A checkout already on a feature branch is work in progress: its branch names
 it, `username/<branch>`, and nothing is asked. That makes resuming a single
-keypress. A worktree is asked about — `Open ada/VBSN-1-init?` — because one
-worktree carries successive pieces of work; Enter takes the name, `n` names the
-work from scratch.
+keypress. A worktree offers two ways in — `Open ada/VBSN-1-init` or
+`New session…` — because one worktree carries successive pieces of work; Enter
+takes the name, `2` names the work from scratch with every question a project
+asks.
 
 A directory whose session is already running is never named for its branch: its
 session row above is the way back to that work, so choosing the row below it is
