@@ -39,6 +39,8 @@ fn host() -> FakeHost {
         )
         .file("/home/dev/code/api/.git/HEAD", "")
         .file("/home/dev/vendor/tool/.git/HEAD", "")
+        .dir("/home/dev/code/api-VBSN-1")
+        .dir("/home/dev/code/api-VBSN-2")
         .succeeds(
             LIST,
             "0\t0\t/home/dev/code/api-VBSN-2/src\tnvim\t\tada/VBSN-2-busy\n",

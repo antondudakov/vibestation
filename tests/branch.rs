@@ -24,6 +24,7 @@ fn host(config: &str) -> FakeHost {
             CACHE,
             r#"[{"name": "api", "path": "/home/dev/code/api", "worktrees": []}]"#,
         )
+        .dir("/home/dev/code/api")
         .fails(LIST, 1, "no server running")
         .fails(
             "tmux has-session -t ada/VBSN-4-tidy",

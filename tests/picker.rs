@@ -33,6 +33,11 @@ fn host() -> FakeHost {
               {"name": "notes", "path": "/home/dev/notes", "worktrees": []}
             ]"#,
         )
+        .dir("/home/dev/code/vibestation")
+        .dir("/home/dev/code/vibestation-VBSN-1")
+        .dir("/home/dev/code/vibestation-VBSN-9")
+        .dir("/home/dev/code/api")
+        .dir("/home/dev/notes")
         .succeeds(
             LIST,
             "0\t0\t/home/dev/code/vibestation\tnvim\t\tada/VBSN-4-picker\n\
@@ -246,6 +251,7 @@ fn long() -> FakeHost {
                  "path": "/home/dev/projects/sports/android-monorepo-3",
                  "worktrees": []}]"#,
         )
+        .dir("/home/dev/projects/sports/android-monorepo-3")
         .succeeds(
             LIST,
             "0\t0\t/home/dev/projects/sports/android-monorepo-3\tclaude\t\tandroid3 | Ana input everywhere\n",
@@ -341,6 +347,7 @@ fn one_long_worktree_name_does_not_widen_the_name_column() {
                  ]},
                 {"name": "api", "path": "/home/dev/code/api", "worktrees": []}]"#,
         )
+        .dir("/home/dev/code/vibestation-VBSN-7-prod-error-rate-0c4faa-again")
         .answer(Answer::Abort);
 
     let rows = rows(&host);
@@ -398,6 +405,7 @@ fn the_prompt_line_counts_what_the_list_is_made_of() {
             CACHE,
             r#"[{"name": "api", "path": "/home/dev/code/api", "worktrees": []}]"#,
         )
+        .dir("/home/dev/code/api")
         .fails(LIST, 1, "no server running")
         .answer(Answer::Abort);
 

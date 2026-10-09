@@ -116,12 +116,69 @@ fn the_first_scan_writes_the_cache_and_the_next_load_reads_it() {
         [&PathBuf::from(CACHE)]
     );
 
-    // A host with the cache but none of the repositories on disk: anything
-    // returned now came from the file rather than a second walk.
-    let cached = FakeHost::new().file(CACHE, &host.file_contents(CACHE).unwrap());
+    // A host with the cache and the directories, but no repository in any of
+    // them: anything returned now came from the file rather than a second
+    // walk.
+    let cached = scanned.iter().fold(
+        FakeHost::new().file(CACHE, &host.file_contents(CACHE).unwrap()),
+        |host, project| host.dir(&project.path),
+    );
 
     assert_eq!(scan::load_or_scan(&cached, &config()).unwrap(), scanned);
     assert!(cached.writes().is_empty(), "the cache is not rewritten");
+    assert!(
+        cached.log().is_empty(),
+        "and git is not asked: {:?}",
+        cached.log()
+    );
+}
+
+#[test]
+fn what_has_gone_from_disk_since_the_last_refresh_is_left_out() {
+    let cache = r#"[
+      {"name": "api", "path": "/home/dev/code/api",
+       "worktrees": [
+         {"path": "/home/dev/code/api-VBSN-1", "branch": "ada/VBSN-1-init"},
+         {"path": "/home/dev/code/api-VBSN-2", "branch": "ada/VBSN-2-gone"}
+       ]},
+      {"name": "old", "path": "/home/dev/code/old", "worktrees": []},
+      {"name": "tool", "path": "/opt/vendor/tool", "worktrees": []}
+    ]"#;
+    let host = FakeHost::new()
+        .file(CACHE, cache)
+        .dir("/home/dev/code/api")
+        .dir("/home/dev/code/api-VBSN-1");
+    let config = Config {
+        extra_projects: vec![PathBuf::from("/opt/vendor/tool")],
+        ..config()
+    };
+
+    let projects = scan::load_or_scan(&host, &config).unwrap();
+
+    assert_eq!(
+        found(&projects),
+        [("api", "/home/dev/code/api"), ("tool", "/opt/vendor/tool")],
+        "a deleted project is dropped; one added by hand stays, so that it \
+         can be taken off the list"
+    );
+    assert_eq!(
+        projects[0]
+            .worktrees
+            .iter()
+            .map(|w| &w.branch)
+            .collect::<Vec<_>>(),
+        ["ada/VBSN-1-init"],
+        "and so is a deleted worktree"
+    );
+    assert!(
+        host.writes().is_empty(),
+        "nothing is rescanned or rewritten"
+    );
+    assert!(
+        host.log().is_empty(),
+        "and git is not asked: {:?}",
+        host.log()
+    );
 }
 
 #[test]

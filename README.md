@@ -264,9 +264,12 @@ field. Delete any field to get its default back.
 | `fetch_before_branch` | The pre-selected answer to "Fetch origin first?". | `true` |
 
 Two data files sit beside it. `projects-cache.json` holds the discovered
-projects, so opening the picker never waits on your disk; it is rewritten only
-when you press ←, there is no expiry, and a stale list is always one keypress
-from correct. `state.json` holds one open count and timestamp per
+projects, so opening the picker never walks your disk: it only checks that
+each cached project and worktree directory is still there, and leaves out
+the ones you have deleted since — except a project you added by hand, which
+stays so you can take it off the list. Nothing new is found that way; the
+cache is rewritten only when you press ←, there is no expiry, and a stale list
+is always one keypress from correct. `state.json` holds one open count and timestamp per
 project, which is the frecency ranking. Both are derived data and can be
 deleted at any time.
 

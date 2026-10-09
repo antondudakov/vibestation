@@ -42,10 +42,29 @@ pub fn cache_path(host: &dyn Host) -> Result<PathBuf> {
 pub fn load_or_scan(host: &dyn Host, config: &Config) -> Result<Vec<Project>> {
     if let Some(cached) = host.read_file(&cache_path(host)?)? {
         if let Ok(projects) = serde_json::from_str(&cached) {
-            return Ok(projects);
+            return Ok(present(host, config, projects));
         }
     }
     rescan(host, config)
+}
+
+/// The cached projects less whatever has gone from disk since: one existence
+/// check a directory, never a walk or a git call, so nothing new is found —
+/// that is still ←. A project added by hand is kept gone or not, so that it
+/// can be taken off the list. The cache itself is left for ← to rewrite.
+fn present(host: &dyn Host, config: &Config, projects: Vec<Project>) -> Vec<Project> {
+    projects
+        .into_iter()
+        .filter(|project| {
+            host.exists(&project.path) || config.extra_projects.contains(&project.path)
+        })
+        .map(|mut project| {
+            project
+                .worktrees
+                .retain(|worktree| host.exists(&worktree.path));
+            project
+        })
+        .collect()
 }
 
 /// Scan the roots again and rewrite the cache: the picker's ←, and the only

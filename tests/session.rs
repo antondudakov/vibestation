@@ -29,6 +29,9 @@ fn host() -> FakeHost {
               {"name": "notes", "path": "/home/dev/code/notes", "worktrees": []}
             ]"#,
         )
+        .dir("/home/dev/code/api")
+        .dir("/home/dev/code/api-VBSN-1")
+        .dir("/home/dev/code/notes")
         .fails(LIST, 1, "no server running on /tmp/tmux-1000/default")
         .succeeds(&format!("/home/dev/code/api $ {BRANCH}"), "main\n")
         .succeeds(

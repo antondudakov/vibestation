@@ -39,6 +39,7 @@ impl Answer {
 
 pub struct FakeHost {
     files: RefCell<BTreeMap<PathBuf, String>>,
+    empty: BTreeSet<PathBuf>,
     commands: BTreeMap<String, Output>,
     answers: RefCell<VecDeque<Answer>>,
     now: SystemTime,
@@ -65,6 +66,7 @@ impl FakeHost {
     pub fn new() -> Self {
         FakeHost {
             files: RefCell::new(BTreeMap::new()),
+            empty: BTreeSet::new(),
             commands: BTreeMap::new(),
             answers: RefCell::new(VecDeque::new()),
             now: UNIX_EPOCH + Duration::from_secs(1_700_000_000),
@@ -89,6 +91,13 @@ impl FakeHost {
         self.files
             .borrow_mut()
             .insert(path.as_ref().to_path_buf(), contents.to_string());
+        self
+    }
+
+    /// An empty directory in the virtual filesystem: a project or worktree the
+    /// cache lists, there on disk, with nothing in it the scan would find.
+    pub fn dir(mut self, path: impl AsRef<Path>) -> Self {
+        self.empty.insert(path.as_ref().to_path_buf());
         self
     }
 
@@ -218,11 +227,14 @@ impl FakeHost {
         }
     }
 
-    /// Directories implied by the virtual filesystem, since it stores files only.
+    /// Directories implied by the virtual filesystem's files, and the empty
+    /// ones, with every parent of either.
     fn dirs(&self) -> BTreeSet<PathBuf> {
         let mut dirs = BTreeSet::new();
-        for path in self.files.borrow().keys() {
-            let mut dir = path.parent();
+        let files = self.files.borrow();
+        let starts = files.keys().filter_map(|path| path.parent());
+        for start in starts.chain(self.empty.iter().map(PathBuf::as_path)) {
+            let mut dir = Some(start);
             while let Some(d) = dir {
                 if !dirs.insert(d.to_path_buf()) {
                     break;
