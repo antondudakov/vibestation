@@ -7,6 +7,7 @@ pub mod line;
 pub mod naming;
 pub mod picker;
 pub mod scan;
+pub mod screen;
 pub mod select;
 pub mod state;
 pub mod tmux;
@@ -82,6 +83,8 @@ pub fn run(host: &dyn Host) -> Result<()> {
 
         let chosen = match host.pick(&picker::title(&rows), &labels, &previews, KEYS)? {
             Pick::Left => Some(Action::Rescan),
+            // Laid out again at the new size, on the next time round.
+            Pick::Resize => None,
             Pick::Enter(index) => menus[index].1.first().map(|(action, _)| *action),
             Pick::Right(index) => more(host, &menus[index])?,
             // Only a session holds a note: it is where the work is going on.
@@ -231,7 +234,7 @@ fn more(
     }
     let labels: Vec<String> = offered.iter().map(|(_, label)| label.clone()).collect();
     Ok(match host.pick(title, &labels, &[], MENU_KEYS)? {
-        Pick::Left | Pick::Tab(_) => None,
+        Pick::Left | Pick::Tab(_) | Pick::Resize => None,
         Pick::Enter(index) | Pick::Right(index) => Some(offered[index].0),
     })
 }

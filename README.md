@@ -54,7 +54,7 @@ First run asks one question — where your projects live — and writes
 
 ## The picker
 
-One picker, always, as tall as your terminal. Live tmux sessions first, each
+One picker, always, filling your terminal. Live tmux sessions first, each
 with its directory, the branch checked out there, what is running in the active
 pane, and how long since a client last had it — most recently left first, so
 the session you want is usually the first row. Then your git projects, ranked
@@ -91,12 +91,19 @@ same repository, in a worktree of its own.
 Choosing a session joins it: `switch-client` when you are already inside tmux,
 `attach-session` when you are not. Esc costs nothing and emits nothing.
 
-Every prompt is drawn in the same window, the one Claude Code asks its
-questions in: a rule, the question, the options with `❯` on the one under the
-cursor, a rule, and a line saying what the keys do. On a terminal 100 columns
-or wider, the picker gives a third of it to a panel previewing the row under
-the cursor: everything the grid had to cut, in full, what → offers it, and a
-session's note. Narrower, the grid keeps every column and there is no panel.
+vibestation takes the terminal the way vim or mc does — the alternate screen,
+given back exactly as it was found when you leave, however you leave. The
+picker is drawn as the window Claude Code asks its questions in: a rule, the
+question, the rows with `❯` on the one under the cursor, a rule, and the keys
+on the last line. Every other prompt — a row's menu, the branch question, yes
+or no, a line of text — opens as a box over the picker, dimmed behind it, with
+its own keys on that last line. Resize the terminal and the picker is laid out
+again at the new size, keeping what you typed and the row you were on.
+
+On a terminal 100 columns or wider, the picker gives a third of it to a panel
+previewing the row under the cursor: everything the grid had to cut, in full,
+what → offers it, and a session's note. Narrower, the grid keeps every column
+and there is no panel.
 
 **Tab** leaves a note on a session — what you were in the middle of, what it is
 waiting on — offering the one it has to edit. The note lives on the session

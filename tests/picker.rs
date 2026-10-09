@@ -413,3 +413,27 @@ fn the_prompt_line_counts_what_the_list_is_made_of() {
     );
     assert_eq!(one.prompts(), ["Open  1 project"], "singular at one");
 }
+
+#[test]
+fn a_resize_lays_the_picker_out_again_at_the_new_size() {
+    let host = host().answers([Answer::Resize, Answer::Abort]);
+
+    vibestation::run(&host).unwrap_err();
+
+    assert_eq!(
+        host.prompts(),
+        [
+            "Open  2 running · 3 projects",
+            "Open  2 running · 3 projects"
+        ],
+        "asked again rather than acted on"
+    );
+    assert!(
+        !host
+            .log()
+            .iter()
+            .any(|c| c.contains("attach-session") || c.contains("switch-client")),
+        "nothing was joined: {:?}",
+        host.log()
+    );
+}

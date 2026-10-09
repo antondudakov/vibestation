@@ -23,6 +23,8 @@ pub enum Answer {
     Right(usize),
     /// Tab on that row of a [`Host::pick`].
     Tab(usize),
+    /// The terminal resized under a [`Host::pick`].
+    Resize,
     Text(String),
     Confirm(bool),
     /// Esc or Ctrl-C at any prompt.
@@ -313,6 +315,7 @@ impl Host for FakeHost {
             Answer::Right(index) => Ok(Pick::Right(in_range(index))),
             Answer::Tab(index) => Ok(Pick::Tab(in_range(index))),
             Answer::Left => Ok(Pick::Left),
+            Answer::Resize => Ok(Pick::Resize),
             other => panic!("prompt {message:?} is a pick, but the next answer is {other:?}"),
         }
     }

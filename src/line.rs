@@ -9,13 +9,11 @@
 //! reads keys and redraws.
 
 use crate::host::Aborted;
+use crate::screen::{self, Body, Window};
 use anyhow::Result;
-use crossterm::cursor::{MoveToColumn, MoveUp};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::queue;
-use crossterm::style::{Color, Print, PrintStyledContent, StyledContent, Stylize};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
-use std::io::{self, Write};
+use crossterm::style::{Color, StyledContent, Stylize};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
 /// The line being edited. The cursor is an index into `chars`, `0..=len`.
 /// The picker's filter is one too.
@@ -127,94 +125,84 @@ fn word_right(chars: &[char], at: usize) -> usize {
     at
 }
 
-/// Free text, pre-filled with an editable `initial`, in a terminal `width`
-/// wide, or [`Aborted`].
-pub fn edit(message: &str, initial: &str, width: usize) -> Result<String> {
+/// Free text, pre-filled with an editable `initial`, on a screen `size`,
+/// with `notes` above the line, or [`Aborted`].
+pub fn edit(
+    message: &str,
+    initial: &str,
+    notes: &[String],
+    size: (usize, usize),
+) -> Result<String> {
+    screen::take()?;
     enable_raw_mode()?;
-    let answer = read(message, initial, width);
+    let answer = read(message, initial, notes, size);
     let _ = disable_raw_mode();
     answer
 }
 
-fn read(message: &str, initial: &str, width: usize) -> Result<String> {
+fn read(
+    message: &str,
+    initial: &str,
+    notes: &[String],
+    mut size: (usize, usize),
+) -> Result<String> {
     let mut line = Line {
         chars: initial.chars().collect(),
         cursor: initial.chars().count(),
     };
-    let mut drawn = false;
-
     loop {
-        render(message, &line, width, drawn)?;
-        drawn = true;
-        let Event::Key(key) = event::read()? else {
-            continue;
+        let (lines, cursor) = window(message, &line, notes, size);
+        screen::draw(&lines, size, Some(cursor))?;
+        let key = match event::read()? {
+            Event::Key(key) => key,
+            Event::Resize(width, height) => {
+                size = (width as usize, height as usize);
+                continue;
+            }
+            _ => continue,
         };
-        let step = match apply(&mut line, key) {
-            Step::Continue => continue,
-            step => step,
-        };
-
-        // The window goes, and the answer is left where it was: `>` once
-        // answered, `?` when abandoned, since nothing was answered and `main`
-        // says nothing either.
-        let answered = step == Step::Submit;
-        let text: String = line.chars.iter().collect();
-        let mut out = io::stdout().lock();
-        queue!(
-            out,
-            MoveUp(2),
-            MoveToColumn(0),
-            Clear(ClearType::FromCursorDown),
-            PrintStyledContent(paint(if answered { ">" } else { "?" }, Color::Green)),
-            Print(format!(" {message} {text}\r\n")),
-        )?;
-        out.flush()?;
-
-        return match answered {
-            true => Ok(text),
-            false => Err(Aborted.into()),
-        };
+        match apply(&mut line, key) {
+            Step::Continue => {}
+            Step::Submit => {
+                screen::rest(size)?;
+                return Ok(line.chars.iter().collect());
+            }
+            Step::Cancel => return Err(Aborted.into()),
+        }
     }
 }
 
-/// The window the list prompts are drawn in, with a line to type on for
-/// options: a rule, the question, the line, a rule and the keys. The cursor is
-/// left where the line says.
-fn render(message: &str, line: &Line, width: usize, drawn: bool) -> Result<()> {
-    let text: String = line.chars.iter().collect();
-    let rule = "─".repeat(width);
-    let cut = |text: &str| {
-        text.chars()
-            .take(width.saturating_sub(2))
-            .collect::<String>()
-    };
-    // ponytail: a line wider than the terminal wraps, and the cursor then lands
-    // on the wrong row. A scrolling window, if the answers ever get that long.
-    let column = "> ".len() + line.cursor;
-
-    let mut out = io::stdout().lock();
-    if drawn {
-        queue!(out, MoveUp(2))?;
+/// The text prompt as a box over the picker — the notes, then the line,
+/// scrolled sideways to keep the cursor on it — and where the cursor goes.
+/// Pure, so the layout is testable.
+fn window(
+    message: &str,
+    line: &Line,
+    notes: &[String],
+    (width, height): (usize, usize),
+) -> (Window, (usize, usize)) {
+    // Room to type, whatever the question.
+    let widest = notes
+        .iter()
+        .map(|note| note.chars().count())
+        .fold(56, usize::max);
+    let inner = screen::inner(message, widest, width);
+    let mut body: Vec<Body> = screen::noted(notes, inner)
+        .into_iter()
+        .map(|note| vec![(note, Some(Color::Yellow))])
+        .collect();
+    if !body.is_empty() {
+        body.push(Vec::new());
     }
-    queue!(
-        out,
-        MoveToColumn(0),
-        Clear(ClearType::FromCursorDown),
-        PrintStyledContent(paint(&rule, Color::DarkGrey)),
-        Print("\r\n"),
-        PrintStyledContent(paint("│ ", Color::DarkGrey)),
-        PrintStyledContent(cut(message).bold()),
-        Print("\r\n"),
-        PrintStyledContent(paint(">", Color::Cyan)),
-        Print(format!(" {text}\r\n")),
-        PrintStyledContent(paint(&rule, Color::DarkGrey)),
-        Print("\r\n"),
-        PrintStyledContent(paint(&cut(KEYS), Color::DarkGrey)),
-        MoveUp(2),
-        MoveToColumn(column as u16),
-    )?;
-    out.flush()?;
-    Ok(())
+
+    let room = inner.saturating_sub(2).max(1);
+    let start = line.cursor.saturating_sub(room - 1);
+    let shown: String = line.chars.iter().skip(start).take(room).collect();
+    let row = body.len();
+    body.push(vec![("> ".to_string(), Some(Color::Cyan)), (shown, None)]);
+
+    let (lines, (x, y)) = screen::dialog(message, &body, inner, KEYS, (width, height));
+    (lines, (x + 2 + line.cursor - start, y + row))
 }
 
 /// Under a text prompt.
@@ -311,6 +299,31 @@ mod tests {
             "a/|b",
             "ctrl-arrows move by word, as they did"
         );
+    }
+
+    #[test]
+    fn a_line_longer_than_the_box_scrolls_to_keep_the_cursor_in_it() {
+        let text = |window: &Window, row: usize| -> String {
+            window[row]
+                .iter()
+                .map(|span| span.content().as_str())
+                .collect()
+        };
+        let short = Line {
+            chars: "ada/x".chars().collect(),
+            cursor: 5,
+        };
+        let (drawn, cursor) = window("Session name", &short, &[], (40, 7));
+        assert_eq!(text(&drawn, 2), format!("  │ > ada/x{} │", " ".repeat(25)));
+        assert_eq!(cursor, (11, 2), "right after what is typed");
+
+        let long = Line {
+            chars: ('a'..='z').chain('a'..='z').collect(),
+            cursor: 52,
+        };
+        let (drawn, cursor) = window("Session name", &long, &[], (40, 7));
+        assert_eq!(text(&drawn, 2), "  │ > xyzabcdefghijklmnopqrstuvwxyz  │");
+        assert_eq!(cursor, (35, 2), "the end in view, the cursor just past it");
     }
 
     #[test]

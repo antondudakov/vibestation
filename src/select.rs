@@ -1,27 +1,26 @@
-//! Every list prompt, drawn as the window Claude Code asks its questions in: a
-//! rule, the question, the options with `❯` on the one under the cursor and a
-//! panel beside them previewing it, a rule, and the keys.
+//! Every list prompt. The picker fills the screen: a rule, the question, the
+//! rows with `❯` on the one under the cursor and a panel beside them
+//! previewing it, a rule, and the keys. Everything else — a row's menu, the
+//! branch question, yes or no — is a handful of options in a box over it,
+//! numbered, so a digit chooses.
 //!
-//! Two kinds of list. The picker filters as you type, on [`crate::line`]'s
-//! line and skim's scorer, since a ticket number is how you reach a worktree.
-//! Everything else — a row's menu, the branch question, yes or no — is a
-//! handful of options, so they are numbered and a digit chooses.
+//! The picker filters as you type, on [`crate::line`]'s line and skim's
+//! scorer, since a ticket number is how you reach a worktree.
 //!
-//! A pure [`apply`] holds every binding and a pure [`frame`] every line drawn;
-//! the loop around them only reads keys and prints.
+//! A pure [`apply`] holds every binding, and a pure [`frame`] and [`menu`]
+//! every line drawn; the loop around them only reads keys and draws.
 
 use crate::host::{Aborted, Pick};
 use crate::line::{self, paint, Line};
+use crate::screen::{self, cut, wrap, Body, Window, DIM};
 use anyhow::Result;
-use crossterm::cursor::{Hide, MoveToColumn, MoveUp, Show};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use crossterm::style::{Color, Print, PrintStyledContent, StyledContent, Stylize};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType};
-use crossterm::{execute, queue};
+use crossterm::style::{Color, StyledContent, Stylize};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use std::cmp::Reverse;
-use std::io::{self, Write};
+use std::sync::{Mutex, MutexGuard};
 
 /// A list, as the host asks for one.
 #[derive(Default)]
@@ -70,6 +69,18 @@ impl<'a> List<'a> {
             matcher: SkimMatcherV2::default().ignore_case(),
         };
         list.settle(true);
+        if ask.filter {
+            if let Some((typed, at, row)) = resume().take() {
+                list.filter = Line {
+                    chars: typed,
+                    cursor: at,
+                };
+                list.refilter();
+                if let Some(at) = list.shown.iter().position(|index| Some(*index) == row) {
+                    list.cursor = at;
+                }
+            }
+        }
         list
     }
 
@@ -224,13 +235,24 @@ fn apply(list: &mut List, key: KeyEvent, page: usize) -> Step {
     Step::Continue
 }
 
-/// How many rows the list may show: the terminal less the window's five lines
-/// — two rules, the question, the gap under it and the keys — and two rows of
-/// margin, so opening the list never scrolls its own top off the screen.
-/// Floored at five — a very short terminal still needs enough rows to be a
-/// list.
-fn page_size(height: usize) -> usize {
-    height.saturating_sub(7).max(5)
+/// Where the picker was when a resize sent its rows back to be laid out at
+/// the new width — what was typed, where in it, and the row under the cursor
+/// — for the picker that reopens to start from. Taken by that one alone.
+static RESUME: Mutex<Option<Place>> = Mutex::new(None);
+
+/// What was typed, the cursor in it, and the option under the list's cursor.
+type Place = (Vec<char>, usize, Option<usize>);
+
+fn resume() -> MutexGuard<'static, Option<Place>> {
+    RESUME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// How many rows the picker shows: the screen less its five lines — two
+/// rules, the question, the gap under it and the keys — and the notes.
+fn page_size(height: usize, notes: usize) -> usize {
+    height.saturating_sub(5 + notes).max(1)
 }
 
 /// The first row on screen: the cursor held mid-page until an end of the list
@@ -258,94 +280,67 @@ pub fn split(width: usize) -> (usize, usize) {
     (width - panel, panel - PANEL_CHROME)
 }
 
-/// Choose one of the options in a terminal of `(width, height)`, or
-/// [`Aborted`].
-pub fn choose(ask: &Ask, (width, height): (usize, usize)) -> Result<Pick> {
+/// Choose one of the options on a screen `(width, height)`, or [`Aborted`].
+pub fn choose(ask: &Ask, size: (usize, usize)) -> Result<Pick> {
+    screen::take()?;
     enable_raw_mode()?;
-    let noted = noted(ask.notes, width).len();
-    let picked = read(ask, width, page_size(height.saturating_sub(noted)));
+    let picked = read(ask, size);
     let _ = disable_raw_mode();
-    let _ = execute!(io::stdout(), Show);
     picked
 }
 
-fn read(ask: &Ask, width: usize, page: usize) -> Result<Pick> {
+fn read(ask: &Ask, mut size: (usize, usize)) -> Result<Pick> {
     let mut list = List::new(ask);
-    let mut out = io::stdout().lock();
-    let mut drawn = false;
-
     loop {
-        let (lines, column) = frame(&list, width, page);
-        render(&mut out, &lines, column, drawn)?;
-        drawn = true;
-        let Event::Key(key) = event::read()? else {
-            continue;
-        };
-        let step = match apply(&mut list, key, page) {
-            Step::Continue => continue,
-            step => step,
+        let page = match ask.filter {
+            true => {
+                let notes = screen::noted(ask.notes, size.0.saturating_sub(2)).len();
+                let page = page_size(size.1, notes);
+                let (lines, column) = frame(&list, size.0, page);
+                screen::set_backdrop(&lines);
+                screen::draw(&lines, size, column.map(|column| (column, 1)))?;
+                page
+            }
+            false => {
+                let (lines, page) = menu(&list, size);
+                screen::draw(&lines, size, None)?;
+                page
+            }
         };
 
-        // Up from the question to the rule, and the window is wiped.
-        queue!(
-            out,
-            MoveUp(1),
-            MoveToColumn(0),
-            Clear(ClearType::FromCursorDown)
-        )?;
-        let Step::Chose(pick) = step else {
-            // An abandoned prompt keeps its `?`, as the text prompt's does.
-            queue!(out, PrintStyledContent(paint("?", Color::Green)))?;
-            queue!(out, Print(format!(" {}\r\n", ask.message)))?;
-            out.flush()?;
-            return Err(Aborted.into());
+        let key = match event::read()? {
+            Event::Key(key) => key,
+            Event::Resize(width, height) => {
+                size = (width as usize, height as usize);
+                // The picker's rows were laid out for the old width, so they
+                // go back to be laid out again, and it reopens where it was.
+                // A box's options fit any width as they are.
+                if ask.filter {
+                    let typed = list.filter.chars.clone();
+                    *resume() = Some((typed, list.filter.cursor, list.highlighted()));
+                    return Ok(Pick::Resize);
+                }
+                continue;
+            }
+            _ => continue,
         };
-        // A chosen row leaves the answered line behind. The arrows and Tab
-        // leave nothing: what they open is drawn where the window was. A grid
-        // row is padded for the grid, which a line on its own has no use for.
-        if let Pick::Enter(index) = pick {
-            let answer = ask.options[index].split_whitespace().collect::<Vec<_>>();
-            queue!(
-                out,
-                PrintStyledContent(paint(">", Color::Green)),
-                Print(format!(" {} ", ask.message)),
-                PrintStyledContent(paint(&answer.join(" "), Color::Cyan)),
-                Print("\r\n"),
-            )?;
+        match apply(&mut list, key, page) {
+            Step::Continue => {}
+            Step::Chose(pick) => {
+                // What the answer sets going happens under the picker, not
+                // under a box that still looks unanswered.
+                if !ask.filter {
+                    screen::rest(size)?;
+                }
+                return Ok(pick);
+            }
+            Step::Cancel => return Err(Aborted.into()),
         }
-        out.flush()?;
-        return Ok(pick);
     }
 }
 
-/// Print the window over the last one and leave the cursor on the question
-/// line — in the filter, or hidden when there is none.
-fn render(out: &mut impl Write, lines: &Window, column: Option<usize>, drawn: bool) -> Result<()> {
-    if drawn {
-        queue!(out, MoveUp(1))?;
-    }
-    queue!(out, MoveToColumn(0), Clear(ClearType::FromCursorDown))?;
-    for (at, line) in lines.iter().enumerate() {
-        if at > 0 {
-            queue!(out, Print("\r\n"))?;
-        }
-        for span in line {
-            queue!(out, PrintStyledContent(span.clone()))?;
-        }
-    }
-    // A window is never fewer than five lines, so this is never `MoveUp(0)`,
-    // which terminals take as one.
-    queue!(out, MoveUp(lines.len() as u16 - 2))?;
-    match column {
-        Some(column) => queue!(out, MoveToColumn(column as u16), Show)?,
-        None => queue!(out, MoveToColumn(0), Hide)?,
-    }
-    out.flush()?;
-    Ok(())
-}
-
-/// One line being written, cut at the terminal's edge: one that wrapped would
-/// throw off the move back up, and leave a copy of itself at every redraw.
+/// One line being written, cut at the screen's edge: one that wrapped would
+/// push every line under it down a row.
 struct Spans {
     spans: Vec<StyledContent<String>>,
     room: usize,
@@ -370,13 +365,8 @@ impl Spans {
     }
 }
 
-const DIM: Option<Color> = Some(Color::DarkGrey);
-
-/// A window, line by line, each line in its colours.
-type Window = Vec<Vec<StyledContent<String>>>;
-
-/// Every line of the window, and the column the cursor sits at on the
-/// question line, if it shows at all. Pure, so the layout is testable.
+/// The picker, every line of the screen, and the column the cursor sits at
+/// on the question line. Pure, so the layout is testable.
 fn frame(list: &List, width: usize, page: usize) -> (Window, Option<usize>) {
     let ask = list.ask;
     let rule = || {
@@ -390,19 +380,15 @@ fn frame(list: &List, width: usize, page: usize) -> (Window, Option<usize>) {
     question.push("│ ", DIM);
     question.spans.push(cut(ask.message, question.room).bold());
     question.room = question.room.saturating_sub(ask.message.chars().count());
-    let mut column = None;
-    if ask.filter {
-        let typed: String = list.filter.chars.iter().collect();
-        question.push("  ", None);
-        match typed.is_empty() {
-            true => question.push("type to filter", DIM),
-            false => question.push(&typed, None),
-        };
-        let at = "│ ".chars().count() + ask.message.chars().count() + 2 + list.filter.cursor;
-        column = Some(at.min(width.saturating_sub(1)));
-    }
+    let typed: String = list.filter.chars.iter().collect();
+    question.push("  ", None);
+    match typed.is_empty() {
+        true => question.push("type to filter", DIM),
+        false => question.push(&typed, None),
+    };
+    let column = "│ ".chars().count() + ask.message.chars().count() + 2 + list.filter.cursor;
     lines.push(question.spans);
-    for note in noted(ask.notes, width) {
+    for note in screen::noted(ask.notes, width.saturating_sub(2)) {
         let mut line = Spans::new(width);
         line.push("│ ", DIM).push(&note, Some(Color::Yellow));
         lines.push(line.spans);
@@ -422,22 +408,20 @@ fn frame(list: &List, width: usize, page: usize) -> (Window, Option<usize>) {
         .filter(|preview| inner > 0 && !preview.is_empty());
     let panel = preview.map_or(Vec::new(), |preview| boxed(preview, inner, page));
 
-    for at in 0..rows.len().max(panel.len()) {
+    // Every row of the page, so the keys sit on the screen's last line.
+    for at in 0..page {
         let mut line = Spans::new(width);
         let text = match rows.get(at) {
+            // `❯` is the cursor; `^` and `v` say the list goes on past the
+            // page.
             Some(&index) => {
-                // `❯` is the cursor; `^` and `v` say the list goes on past the
-                // page.
                 let marker = match (top + at == list.cursor, at) {
                     (true, _) => "❯",
                     (_, 0) if top > 0 => "^",
                     _ if at + 1 == rows.len() && more_below => "v",
                     _ => " ",
                 };
-                match ask.filter {
-                    true => format!("{marker} {}", ask.options[index]),
-                    false => format!("{marker} {}. {}", index + 1, ask.options[index]),
-                }
+                format!("{marker} {}", ask.options[index])
             }
             None => String::new(),
         };
@@ -464,7 +448,50 @@ fn frame(list: &List, width: usize, page: usize) -> (Window, Option<usize>) {
     let mut keys = Spans::new(width);
     keys.push(&footer(ask), DIM);
     lines.push(keys.spans);
-    (lines, column)
+    (lines, Some(column.min(width.saturating_sub(1))))
+}
+
+/// A list that does not filter, as a box over the picker: the notes, then the
+/// options, numbered and paged to the screen. Also the page, for the keys
+/// that move by one. Pure, so the layout is testable.
+fn menu(list: &List, (width, height): (usize, usize)) -> (Window, usize) {
+    let ask = list.ask;
+    let widest = ask
+        .options
+        .iter()
+        .map(|option| option.chars().count() + "❯ 1. ".chars().count())
+        .chain(ask.notes.iter().map(|note| note.chars().count()))
+        .max()
+        .unwrap_or(0);
+    let inner = screen::inner(ask.message, widest, width);
+
+    let mut body: Vec<Body> = screen::noted(ask.notes, inner)
+        .into_iter()
+        .map(|note| vec![(note, Some(Color::Yellow))])
+        .collect();
+    if !body.is_empty() {
+        body.push(Vec::new());
+    }
+    // The box's two edges, the keys, and a row of margin.
+    let page = height.saturating_sub(4 + body.len()).max(1);
+    let top = top(list.cursor, list.shown.len(), page);
+    let shown = list.shown.len().min(top + page);
+    for at in top..shown {
+        let here = at == list.cursor;
+        let marker = match here {
+            true => "❯",
+            false if at == top && top > 0 => "^",
+            false if at + 1 == shown && shown < list.shown.len() => "v",
+            false => " ",
+        };
+        let index = list.shown[at];
+        body.push(vec![(
+            format!("{marker} {}. {}", index + 1, ask.options[index]),
+            here.then_some(Color::Cyan),
+        )]);
+    }
+    let (lines, _) = screen::dialog(ask.message, &body, inner, &footer(ask), (width, height));
+    (lines, page)
 }
 
 /// The preview in a box `inner` wide, cut to the page: its long lines wrapped,
@@ -481,39 +508,6 @@ fn boxed(preview: &[String], inner: usize, page: usize) -> Vec<Vec<(String, Opti
         ]);
     }
     lines.push(vec![(format!("  └{edge}┘"), DIM)]);
-    lines
-}
-
-/// The notes as the lines they take under the question: wrapped rather than
-/// cut, since the reason comes last — git's own error has several lines.
-fn noted(notes: &[String], width: usize) -> Vec<String> {
-    notes
-        .iter()
-        .flat_map(|note| note.lines())
-        .flat_map(|line| wrap(line.trim_end(), width.saturating_sub(2)))
-        .collect()
-}
-
-/// `text` in lines of at most `width`, broken at the last space that fits,
-/// or mid-word when none does.
-fn wrap(text: &str, width: usize) -> Vec<String> {
-    let width = width.max(1);
-    let mut rest: Vec<char> = text.chars().collect();
-    let mut lines = Vec::new();
-    while rest.len() > width {
-        let at = rest[..=width]
-            .iter()
-            .rposition(|c| *c == ' ')
-            .filter(|at| *at > 0)
-            .unwrap_or(width);
-        lines.push(rest[..at].iter().collect::<String>().trim_end().to_string());
-        rest = rest[at..]
-            .iter()
-            .skip_while(|c| **c == ' ')
-            .copied()
-            .collect();
-    }
-    lines.push(rest.into_iter().collect());
     lines
 }
 
@@ -535,10 +529,6 @@ fn footer(ask: &Ask) -> String {
     .filter(|keys| !keys.is_empty())
     .collect::<Vec<_>>()
     .join(" · ")
-}
-
-fn cut(text: &str, width: usize) -> String {
-    text.chars().take(width).collect()
 }
 
 #[cfg(test)]
@@ -754,8 +744,21 @@ mod tests {
         );
     }
 
+    /// A menu's box as text, styles dropped, over an empty picker.
+    fn boxed_text(ask: &Ask, keys: &[KeyEvent], size: (usize, usize)) -> Vec<String> {
+        let mut list = List::new(ask);
+        for key in keys {
+            apply(&mut list, *key, 10);
+        }
+        menu(&list, size)
+            .0
+            .iter()
+            .map(|line| line.iter().map(|span| span.content().as_str()).collect())
+            .collect()
+    }
+
     #[test]
-    fn the_window_is_a_rule_the_question_the_rows_a_rule_and_the_keys() {
+    fn a_menu_is_a_box_over_the_picker_with_its_keys_on_the_last_line() {
         let options = ["Join", "Kill"].map(String::from).to_vec();
         let menu = Ask {
             message: "ada/VBSN-4-picker",
@@ -765,16 +768,18 @@ mod tests {
             ..Ask::default()
         };
 
+        let pad = " ".repeat(8);
         assert_eq!(
-            text(&menu, &[plain(KeyCode::Down)], 40),
+            boxed_text(&menu, &[plain(KeyCode::Down)], (40, 8)),
             [
-                "─".repeat(40).as_str(),
-                "│ ada/VBSN-4-picker",
-                "",
-                "  1. Join",
-                "❯ 2. Kill",
-                "─".repeat(40).as_str(),
-                "Enter to select · ↑/↓ to navigate · 1-2 ",
+                String::new(),
+                format!("{pad}┌─ ada/VBSN-4-picker ─┐"),
+                format!("{pad}│   1. Join           │"),
+                format!("{pad}│ ❯ 2. Kill           │"),
+                format!("{pad}└─────────────────────┘"),
+                String::new(),
+                String::new(),
+                "Enter to select · ↑/↓ to navigate · 1-2 ".to_string(),
             ]
         );
     }
@@ -804,7 +809,7 @@ mod tests {
     }
 
     #[test]
-    fn notes_sit_under_the_question() {
+    fn notes_sit_in_the_box_above_the_options() {
         let options = ["Yes", "No"].map(String::from).to_vec();
         let notes = [
             "api-VBSN-1 has uncommitted changes".to_string(),
@@ -816,18 +821,25 @@ mod tests {
             notes: &notes,
             ..Ask::default()
         };
+        let body: Vec<String> = boxed_text(&ask, &[], (30, 14))
+            .iter()
+            .filter_map(|line| {
+                let inside = line.split_once("│ ")?.1;
+                Some(inside.rsplit_once(" │")?.0.trim_end().to_string())
+            })
+            .collect();
         assert_eq!(
-            &text(&ask, &[], 24)[1..8],
+            body,
             [
-                "│ Remove api-VBSN-2?",
-                "│ api-VBSN-1 has",
-                "│ uncommitted changes",
-                "│ fatal: locked",
-                "│ use 'remove -f -f'",
+                "api-VBSN-1 has",
+                "uncommitted changes",
+                "fatal: locked",
+                "use 'remove -f -f'",
                 "",
                 "❯ 1. Yes",
+                "  2. No",
             ],
-            "wrapped, not cut, and git's lines kept apart"
+            "wrapped to the box, not cut, and git's lines kept apart"
         );
     }
 
@@ -919,29 +931,19 @@ mod tests {
     }
 
     #[test]
-    fn a_long_line_wraps_at_a_space_or_mid_word_when_there_is_none() {
-        assert_eq!(
-            wrap("Notes: fixing the arrows", 12),
-            ["Notes:", "fixing the", "arrows"]
-        );
-        assert_eq!(wrap("abcdefgh", 3), ["abc", "def", "gh"]);
-        assert_eq!(wrap("short", 12), ["short"]);
-        assert_eq!(wrap("", 12), [""]);
-    }
-
-    #[test]
     fn the_page_fills_the_terminal_and_follows_the_cursor() {
-        assert_eq!(page_size(50), 43, "a tall terminal shows 43 rows, not 7");
-        assert_eq!(page_size(24), 17);
+        assert_eq!(page_size(50, 0), 45, "every row but the window's five");
+        assert_eq!(page_size(24, 2), 17, "and the notes'");
         assert_eq!(
-            page_size(8),
-            5,
-            "floored, so a short terminal is still a list"
-        );
-        assert_eq!(
-            page_size(0),
-            5,
+            page_size(0, 0),
+            1,
             "a terminal with no height does not underflow"
+        );
+        let window = text(&picker(&options()), &[], 80);
+        assert_eq!(window.len(), 15, "a page of ten fills fifteen rows");
+        assert!(
+            window[14].starts_with("Enter to select"),
+            "the keys at the bottom"
         );
 
         assert_eq!(top(0, 30, 10), 0);

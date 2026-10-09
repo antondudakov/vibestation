@@ -76,6 +76,10 @@ pub enum Pick {
     Left,
     Right(usize),
     Tab(usize),
+    /// The terminal changed size under the picker, whose rows are laid out
+    /// for a width: lay them out again and ask again. The picker reopens with
+    /// what was typed and the row it was on.
+    Resize,
 }
 
 pub trait Host {
@@ -162,8 +166,8 @@ fn said() -> Vec<String> {
     std::mem::take(&mut *SAID.lock().unwrap_or_else(|poisoned| poisoned.into_inner()))
 }
 
-/// For what draws no list to show them in: the text prompt, and the process
-/// `exec` hands the terminal to.
+/// For the process `exec` hands the terminal to, which draws no prompt to
+/// show them in.
 fn print_said() {
     for line in said() {
         println!("{line}");
@@ -224,6 +228,8 @@ impl Host for RealHost {
 
     fn exec(&self, argv: &[&str], cwd: Option<&Path>) -> Result<()> {
         use std::os::unix::process::CommandExt;
+        // Whatever takes the terminal next gets it as it was found.
+        crate::screen::give_back();
         print_said();
         let (bin, args) = argv.split_first().context("exec called with empty argv")?;
         let mut cmd = Command::new(bin);
@@ -278,25 +284,7 @@ impl Host for RealHost {
     }
 
     fn status(&self, line: &str) {
-        use crossterm::cursor::MoveToColumn;
-        use crossterm::style::Print;
-        use crossterm::terminal::{Clear, ClearType};
-        use std::io::Write;
-
-        // Cut to the terminal, since clearing a line cannot reach the half of
-        // it that wrapped. Best effort: a status that cannot be drawn is lost.
-        let line: String = line
-            .chars()
-            .take(self.terminal().0.saturating_sub(1))
-            .collect();
-        let mut out = std::io::stdout().lock();
-        let _ = crossterm::queue!(
-            out,
-            MoveToColumn(0),
-            Clear(ClearType::CurrentLine),
-            Print(line)
-        );
-        let _ = out.flush();
+        crate::screen::status(line, self.terminal());
     }
 
     fn say(&self, line: &str) {
@@ -314,8 +302,7 @@ impl Host for RealHost {
     }
 
     fn input(&self, message: &str, default: &str) -> Result<String> {
-        print_said();
-        crate::line::edit(message, default, self.terminal().0)
+        crate::line::edit(message, default, &said(), self.terminal())
     }
 
     /// Yes or no, as a list of two with the cursor on the default.

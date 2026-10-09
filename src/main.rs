@@ -1,5 +1,8 @@
 use clap::Parser;
+use signal_hook::consts::{SIGINT, SIGTERM};
+use signal_hook::iterator::Signals;
 use vibestation::host::{aborted, RealHost};
+use vibestation::screen;
 
 /// One picker for your tmux sessions and git projects.
 #[derive(Parser)]
@@ -48,7 +51,29 @@ const VERSION: &str = match option_env!("VIBESTATION_VERSION") {
 
 fn main() {
     Cli::parse();
-    if let Err(e) = vibestation::run(&RealHost) {
+    // A panic on the alternate screen would say why where nobody can read
+    // it, and leave the terminal in its state.
+    let report = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        screen::give_back();
+        report(info);
+    }));
+
+    // Ctrl-C while git fetches, or a kill, would otherwise end the process on
+    // the alternate screen and leave the shell there. Keys are read raw, so
+    // at a prompt Ctrl-C is a key, never this.
+    if let Ok(mut signals) = Signals::new([SIGINT, SIGTERM]) {
+        std::thread::spawn(move || {
+            if let Some(signal) = signals.forever().next() {
+                screen::give_back();
+                std::process::exit(128 + signal);
+            }
+        });
+    }
+
+    let ran = vibestation::run(&RealHost);
+    screen::give_back();
+    if let Err(e) = ran {
         // Dismissing the picker is not a failure: it costs nothing and says so.
         if aborted(&e) {
             return;

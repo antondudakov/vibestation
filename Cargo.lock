@@ -492,6 +492,7 @@ dependencies = [
  "fuzzy-matcher",
  "serde",
  "serde_json",
+ "signal-hook",
  "toml",
  "walkdir",
 ]
