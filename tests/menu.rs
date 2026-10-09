@@ -81,11 +81,41 @@ fn right_on_a_session_offers_it_and_left_goes_back_to_the_list() {
 
 #[test]
 fn a_session_can_be_joined_killed_or_renamed() {
-    let host = host().answers([Answer::Right(1), Answer::Abort]);
+    let host = host().answers([Answer::Right(1), Answer::Abort, Answer::Abort]);
 
     drive(&host);
 
-    assert_eq!(host.options(), ["Join", "Kill", "Rename"]);
+    assert_eq!(host.offered()[1], ["Join", "Kill", "Rename"]);
+}
+
+#[test]
+fn esc_in_a_box_closes_it_and_the_picker_comes_back() {
+    let menu = host().answers([Answer::Right(1), Answer::Abort, Answer::Abort]);
+    let kill = host().answers([
+        Answer::Right(1),
+        Answer::Select(1),
+        Answer::Abort,
+        Answer::Abort,
+    ]);
+
+    drive(&menu);
+    drive(&kill);
+
+    assert_eq!(
+        menu.prompts(),
+        [
+            "Open  1 running · 2 projects",
+            "ada/VBSN-2-busy",
+            "Open  1 running · 2 projects",
+        ],
+        "Esc in the menu, then Esc at the picker, which is the way out"
+    );
+    assert_eq!(
+        kill.prompts().last().unwrap(),
+        "Open  1 running · 2 projects",
+        "Esc at a question an action asks is as good as no"
+    );
+    assert!(!kill.log().iter().any(|c| c.contains("kill-session")));
 }
 
 #[test]
@@ -288,13 +318,13 @@ fn the_row_under_the_cursor_is_previewed_in_full_with_its_note() {
 fn a_scanned_project_offers_a_session_or_the_editor() {
     let host = host()
         .editor("code -w")
-        .answers([Answer::Right(3), Answer::Abort]);
+        .answers([Answer::Right(3), Answer::Abort, Answer::Abort]);
 
     drive(&host);
 
     assert_eq!(host.prompts()[1], "api");
     assert_eq!(
-        host.options(),
+        host.offered()[1],
         ["New session", "Open in code", "Clean up worktrees"],
         "no way to take it off the list, since the next refresh would find it \
          again"
@@ -631,6 +661,44 @@ fn clean_up_asks_about_each_outdated_worktree_and_only_those() {
         1,
         "declined, so the other stays: {:?}",
         host.log()
+    );
+}
+
+#[test]
+fn esc_part_way_through_clean_up_stops_asking_and_keeps_what_went() {
+    let host = cleanable()
+        .succeeds(STATUS, "")
+        .succeeds(
+            "/home/dev/code/api $ git worktree remove /home/dev/code/api-VBSN-1",
+            "",
+        )
+        .answers([
+            Answer::Right(3),
+            Answer::Select(2),
+            Answer::Confirm(true),
+            Answer::Abort,
+            Answer::Abort,
+        ]);
+
+    drive(&host);
+
+    assert!(ran(
+        &host,
+        "/home/dev/code/api $ git worktree remove /home/dev/code/api-VBSN-1"
+    ));
+    assert!(
+        host.prompts()
+            .last()
+            .unwrap()
+            .starts_with("Open  1 running"),
+        "back at the picker, not out of the tool: {:?}",
+        host.prompts()
+    );
+    assert!(
+        host.writes()
+            .iter()
+            .any(|(path, _)| path.ends_with("projects-cache.json")),
+        "and the list is rescanned without the one that went"
     );
 }
 

@@ -518,17 +518,16 @@ fn footer(ask: &Ask) -> String {
         (false, 1) => "1 to choose".to_string(),
         (false, n) => format!("1-{n} to choose"),
     };
-    [
-        "Enter to select",
-        "↑/↓ to navigate",
-        &choose,
-        ask.keys,
-        "Esc to cancel",
-    ]
-    .into_iter()
-    .filter(|keys| !keys.is_empty())
-    .collect::<Vec<_>>()
-    .join(" · ")
+    // Esc in a box closes the box; at the picker there is nothing under it.
+    let esc = match ask.filter {
+        true => "Esc to quit",
+        false => "Esc to cancel",
+    };
+    ["Enter to select", "↑/↓ to navigate", &choose, ask.keys, esc]
+        .into_iter()
+        .filter(|keys| !keys.is_empty())
+        .collect::<Vec<_>>()
+        .join(" · ")
 }
 
 #[cfg(test)]

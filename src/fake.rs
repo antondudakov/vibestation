@@ -49,7 +49,7 @@ pub struct FakeHost {
     log: RefCell<Vec<String>>,
     writes: RefCell<Vec<(PathBuf, String)>>,
     prompts: RefCell<Vec<String>>,
-    options: RefCell<Vec<String>>,
+    options: RefCell<Vec<Vec<String>>>,
     previews: RefCell<Vec<Vec<String>>>,
     statuses: RefCell<Vec<String>>,
     said: RefCell<Vec<String>>,
@@ -173,6 +173,12 @@ impl FakeHost {
     /// the picker's rows, or a row's menu, as the developer would have seen
     /// them.
     pub fn options(&self) -> Vec<String> {
+        self.options.borrow().last().cloned().unwrap_or_default()
+    }
+
+    /// The options offered at every [`Host::select`] and [`Host::pick`], in
+    /// order: what a menu offered after Esc took the picker back.
+    pub fn offered(&self) -> Vec<Vec<String>> {
         self.options.borrow().clone()
     }
 
@@ -281,7 +287,7 @@ impl Host for FakeHost {
     }
 
     fn select(&self, message: &str, options: &[String]) -> Result<usize> {
-        *self.options.borrow_mut() = options.to_vec();
+        self.options.borrow_mut().push(options.to_vec());
         match self.next_answer(message)? {
             Answer::Select(index) => {
                 assert!(
@@ -301,7 +307,7 @@ impl Host for FakeHost {
         previews: &[Vec<String>],
         _keys: &str,
     ) -> Result<Pick> {
-        *self.options.borrow_mut() = options.to_vec();
+        self.options.borrow_mut().push(options.to_vec());
         *self.previews.borrow_mut() = previews.to_vec();
         let in_range = |index: usize| {
             assert!(

@@ -86,7 +86,7 @@ pub fn run(host: &dyn Host) -> Result<()> {
             // Laid out again at the new size, on the next time round.
             Pick::Resize => None,
             Pick::Enter(index) => menus[index].1.first().map(|(action, _)| *action),
-            Pick::Right(index) => more(host, &menus[index])?,
+            Pick::Right(index) => closed(more(host, &menus[index]))?.flatten(),
             // Only a session holds a note: it is where the work is going on.
             Pick::Tab(index) => match rows[index].0 {
                 Row::Session(index) => Some(Action::Note(index)),
@@ -97,61 +97,103 @@ pub fn run(host: &dyn Host) -> Result<()> {
         // list comes back as it was.
         let Some(action) = chosen else { continue };
 
-        match action {
-            Action::Join(index) => return tmux::attach(host, &sessions[index].name),
-            Action::Kill(index) => {
-                let name = &sessions[index].name;
-                if host.confirm(&format!("Kill {name}?"), false)? {
-                    tmux::kill(host, name)?;
-                    sessions = tmux::list(host)?;
-                }
-            }
-            Action::Rename(index) => {
-                let name = &sessions[index].name;
-                let to = naming::sanitize(host.input("Session name", name)?.trim());
-                if !to.is_empty() && to != *name {
-                    // A taken name is a slip, not a fault: the picker is still
-                    // there to try again from.
-                    if let Err(refused) = tmux::rename(host, name, &to) {
-                        host.say(&refused.to_string());
-                    }
-                    sessions = tmux::list(host)?;
-                }
-            }
-            Action::Note(index) => {
-                let session = &sessions[index];
-                let note = host.input(&format!("Note for {}", session.name), &session.note)?;
-                tmux::note(host, &session.name, &note)?;
-                sessions = tmux::list(host)?;
-            }
-            Action::Start(index, child) => {
-                return open(host, &config, &sessions, &projects[index], child)
-            }
-            Action::Edit(index, child) => return edit(host, &projects[index], child),
-            Action::Forget(index) => {
-                config::remove_extra(host, &mut config, &projects[index].path)?;
-                found = scan::rescan(host, &config)?;
-            }
-            Action::Remove(index, child) => {
-                let project = &projects[index];
-                // Chosen by hand from its own menu, so Yes is the default.
-                let path = &project.worktrees[child].path;
-                if remove(host, &sessions, &project.path, path, true)? {
-                    found = scan::rescan(host, &config)?;
-                }
-            }
-            Action::Clean(index) => {
-                if clean(host, &config, &sessions, &projects[index])? {
-                    found = scan::rescan(host, &config)?;
-                }
-            }
-            Action::Rescan => found = scan::rescan(host, &config)?,
-            Action::Add => {
-                add(host, &mut config)?;
-                found = scan::rescan(host, &config)?;
-            }
+        let acted = act(
+            host,
+            action,
+            &mut config,
+            &mut found,
+            &mut sessions,
+            &projects,
+        );
+        if closed(acted)? == Some(true) {
+            return Ok(());
         }
     }
+}
+
+/// Esc in a box closes that box alone, and the picker comes back as though
+/// nothing had been chosen; Esc at the picker itself is the way out. Every
+/// question an action asks comes before anything it changes, so a box closed
+/// part way leaves nothing half done.
+fn closed<T>(result: Result<T>) -> Result<Option<T>> {
+    match result {
+        Err(error) if host::aborted(&error) => Ok(None),
+        result => result.map(Some),
+    }
+}
+
+/// Do what was chosen. Says whether the picker has been left — for a session,
+/// or the editor — rather than changed and reopened.
+fn act(
+    host: &dyn Host,
+    action: Action,
+    config: &mut Config,
+    found: &mut Vec<Project>,
+    sessions: &mut Vec<Session>,
+    projects: &[Project],
+) -> Result<bool> {
+    match action {
+        Action::Join(index) => {
+            tmux::attach(host, &sessions[index].name)?;
+            return Ok(true);
+        }
+        Action::Kill(index) => {
+            let name = &sessions[index].name;
+            if host.confirm(&format!("Kill {name}?"), false)? {
+                tmux::kill(host, name)?;
+                *sessions = tmux::list(host)?;
+            }
+        }
+        Action::Rename(index) => {
+            let name = &sessions[index].name;
+            let to = naming::sanitize(host.input("Session name", name)?.trim());
+            if !to.is_empty() && to != *name {
+                // A taken name is a slip, not a fault: the picker is still
+                // there to try again from.
+                if let Err(refused) = tmux::rename(host, name, &to) {
+                    host.say(&refused.to_string());
+                }
+                *sessions = tmux::list(host)?;
+            }
+        }
+        Action::Note(index) => {
+            let session = &sessions[index];
+            let note = host.input(&format!("Note for {}", session.name), &session.note)?;
+            tmux::note(host, &session.name, &note)?;
+            *sessions = tmux::list(host)?;
+        }
+        Action::Start(index, child) => {
+            open(host, config, sessions, &projects[index], child)?;
+            return Ok(true);
+        }
+        Action::Edit(index, child) => {
+            edit(host, &projects[index], child)?;
+            return Ok(true);
+        }
+        Action::Forget(index) => {
+            config::remove_extra(host, config, &projects[index].path)?;
+            *found = scan::rescan(host, config)?;
+        }
+        Action::Remove(index, child) => {
+            let project = &projects[index];
+            // Chosen by hand from its own menu, so Yes is the default.
+            let path = &project.worktrees[child].path;
+            if remove(host, sessions, &project.path, path, true)? {
+                *found = scan::rescan(host, config)?;
+            }
+        }
+        Action::Clean(index) => {
+            if clean(host, config, sessions, &projects[index])? {
+                *found = scan::rescan(host, config)?;
+            }
+        }
+        Action::Rescan => *found = scan::rescan(host, config)?,
+        Action::Add => {
+            add(host, config)?;
+            *found = scan::rescan(host, config)?;
+        }
+    }
+    Ok(false)
 }
 
 /// What can be done to a row, each labelled for its menu, under the name the
@@ -325,9 +367,13 @@ fn clean(
         ));
     }
     let mut removed = false;
-    // Chosen by vibestation rather than by hand, so No is the default.
+    // Chosen by vibestation rather than by hand, so No is the default. Esc
+    // stops the asking, and what went before it has still gone.
     for path in &outdated {
-        removed |= remove(host, sessions, &project.path, path, false)?;
+        match closed(remove(host, sessions, &project.path, path, false))? {
+            Some(gone) => removed |= gone,
+            None => break,
+        }
     }
     Ok(removed)
 }

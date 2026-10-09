@@ -19,7 +19,7 @@ projects below, and a session waiting at the end of either.
                                                                                   │ Notes: fixing the arrows     │
                                                                                   └──────────────────────────────┘
 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-Enter to select · ↑/↓ to navigate · type to filter · ← to refresh · → for more · Tab to add notes · Esc to cancel
+Enter to select · ↑/↓ to navigate · type to filter · ← to refresh · → for more · Tab to add notes · Esc to quit
 ```
 
 Pick a session and you are in it. Pick a project and vibestation names the
@@ -89,7 +89,12 @@ resumes the work running there; the project row starts something else in the
 same repository, in a worktree of its own.
 
 Choosing a session joins it: `switch-client` when you are already inside tmux,
-`attach-session` when you are not. Esc costs nothing and emits nothing.
+`attach-session` when you are not. Esc at the picker quits, costing nothing
+and emitting nothing; Esc in any box over it — a menu, a question, a line of
+text — closes that box and the picker comes back. Every question an action
+asks comes before anything it changes, so closing one part way leaves nothing
+half done; Esc part way through Clean up stops the asking, and what was
+removed before it stays removed.
 
 vibestation takes the terminal the way vim or mc does — the alternate screen,
 given back exactly as it was found when you leave, however you leave. The
@@ -193,7 +198,7 @@ so is the picker's filter: `C-a` and `C-e` for the ends, `C-b` and `C-f` and
 `M-b` and `M-f` to move, `C-w` and `M-d` to kill a word either way, `C-k` and
 `C-u` to kill to an end, `C-d` to delete forward. In a text prompt the arrows,
 Home and End still work; in the picker ← and → are taken, and `C-b` and `C-f`
-do their job. Esc cancels, and an answer offered as a default is there to be
+do their job. Esc closes the box, and an answer offered as a default is there to be
 edited, never to be retyped.
 
 ### The branch
